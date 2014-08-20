@@ -1,0 +1,456 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?page id="mastervisahandi"?>
+<zk>
+<zscript src="../wf_global/wfglobaldefs.zs" />
+<zscript src="../wf_global/wfsqlfuncs.zs" />
+<zscript>
+<![CDATA[
+MYTITLE = "Work Force Management";
+MYVERSION = "v0.1";
+MYPANEL = "masterdjvispan";
+/*
+Title		: Master Visa management
+Written by	: Victor Wong
+Dated		: 22/02/2014
+
+Revisions:
+*/
+import java.sql.DriverManager;
+import java.sql.Connection;
+import java.sql.SQLException;
+import groovy.sql.*;
+import java.util.*;
+import java.text.*;
+import org.victor.*;
+sechand = new SecurityFuncs();
+/*
+myincludeid = Executions.getCurrent().getParameter("myid");
+useraccessobj = sechand.getUserAccessObject();
+if(useraccessobj == null) Executions.sendRedirect(MAINLOGIN_PAGE);
+*/
+kiboo = new Generals();
+sqlhand = new SqlFuncs();
+lbhand = new ListboxHandler();
+guihand = new GuiFuncs();
+luhand = new LookupFuncs();
+
+glob_sel_masterv = glob_sel_subcon = glob_sel_worker = "";
+gsmv_customer = gsmv_no = gscont_id = gsworker_id = "";
+
+void updContractBread()
+{
+	ctk_bread.setValue(gsmv_customer + " > " + gsmv_no + " > " + gscont_id + " > " + gsworker_id);
+}
+
+void showMasterVisaMeta(String iwhat)
+{
+	ir = getMastervisaRec(iwhat);
+	if(ir == null) return;
+	m_customer_name.setValue(kiboo.checkNullString(ir.get("customer_name")));
+	m_mastervisa.setValue(kiboo.checkNullString(ir.get("mastervisa")));
+	m_visaqty.setValue(ir.get("visaqty").toString());
+	showSubcontract(iwhat);
+	glob_sel_subcon = glob_sel_worker = "";
+	subcon_div.setVisible(true);
+	workers_div.setVisible(false);
+}
+
+class msvclik implements org.zkoss.zk.ui.event.EventListener
+{
+	public void onEvent(Event event) throws UiException
+	{
+		selitm = event.getReference();
+		glob_sel_masterv = lbhand.getListcellItemLabel(selitm,0);
+		showMasterVisaMeta(glob_sel_masterv);
+
+		gscont_id = gsworker_id = "";
+		gsmv_customer = lbhand.getListcellItemLabel(selitm,1);
+		gsmv_no = lbhand.getListcellItemLabel(selitm,2);
+		updContractBread();
+	}
+}
+msvilbclick = new msvclik();
+
+void showMasterVisa()
+{
+Object[] mvhds = 
+{
+	new listboxHeaderWidthObj("REC",true,"60px"),
+	new listboxHeaderWidthObj("Customer",true,""),
+	new listboxHeaderWidthObj("MV.No",true,""),
+	new listboxHeaderWidthObj("V.Qty",true,"60px"),
+	new listboxHeaderWidthObj("Subc",true,"60px"),
+	new listboxHeaderWidthObj("Wrks",true,"60px"),
+};
+	Listbox newlb = lbhand.makeVWListbox_Width(mastervisa_holder, mvhds, "mastervisas_lb", 20);
+	sqlstm = "select mh.origid,mh.customer_name,mh.mastervisa,mh.visaqty," +
+	"(select count(origid) from myc where parent_id=mh.origid) as subc, " +
+	"(select sum( (select count(origid) from myw where parent_id=ks.origid) ) from myc ks where ks.parent_id=mh.origid) as workers " +
+
+	"from myh mh";
+	trs = gpWFM_GetRows(sqlstm);
+	if(trs.size() == 0) return;
+	newlb.setMold("paging");
+	newlb.addEventListener("onSelect", msvilbclick);
+	ArrayList kabom = new ArrayList();
+	String[] fl = { "origid","customer_name","mastervisa","visaqty","subc","workers" };
+	for(d : trs)
+	{
+		popuListitems_Data(kabom,fl,d);
+		lbhand.insertListItems(newlb,kiboo.convertArrayListToStringArray(kabom),"false","");
+		kabom.clear();
+	}
+}
+
+void showSubconMeta(String iwhat)
+{
+	r = getSubconRec(iwhat);
+	if(r == null) return;
+
+	s_subc_id.setValue(kiboo.checkNullString(r.get("subc_id")));
+	try { s_cstartdate.setValue(r.get("cstartdate")); } catch (Exception e) {}
+	try { s_cenddate.setValue(r.get("cenddate")); } catch (Exception e) {}
+	showWorkers(iwhat);
+	glob_sel_worker = "";
+	workers_div.setVisible(true);
+}
+
+class subclik implements org.zkoss.zk.ui.event.EventListener
+{
+	public void onEvent(Event event) throws UiException
+	{
+		selitm = event.getReference();
+		glob_sel_subcon = lbhand.getListcellItemLabel(selitm,0);
+		showSubconMeta(glob_sel_subcon);
+
+		gsworker_id = "";
+		gscont_id = lbhand.getListcellItemLabel(selitm,1);
+		updContractBread();
+	}
+}
+subclbclick = new subclik();
+
+void showSubcontract(String iparent)
+{
+Object[] sbchds = 
+{
+	new listboxHeaderWidthObj("origid",false,""),
+	new listboxHeaderWidthObj("Contract.ID",true,""),
+	new listboxHeaderWidthObj("Start",true,"70px"),
+	new listboxHeaderWidthObj("End",true,"70px"),
+	new listboxHeaderWidthObj("Wrks",true,"60px"),
+};
+	Listbox newlb = lbhand.makeVWListbox_Width(subcontract_holder, sbchds, "subcontracts_lb", 20);
+	sqlstm = "select ks.origid, ks.subc_id, ks.cstartdate, ks.cenddate, " +
+	"(select count(origid) from myw where parent_id=ks.origid) as workers " +
+	"from myc ks where parent_id=" + iparent;
+	trs = gpWFM_GetRows(sqlstm);
+	if(trs.size() == 0) return;
+	newlb.setMold("paging");
+	newlb.addEventListener("onSelect", subclbclick);
+	ArrayList kabom = new ArrayList();
+	String[] fl = { "origid","subc_id","cstartdate","cenddate","workers" };
+	for(d : trs)
+	{
+		popuListitems_Data(kabom,fl,d);
+		lbhand.insertListItems(newlb,kiboo.convertArrayListToStringArray(kabom),"false","");
+		kabom.clear();
+	}
+}
+
+void showWorkerMeta(String iwhat)
+{
+	r = getWorkRec(iwhat);
+	if(r == null) return;
+	w_worker_name.setValue(kiboo.checkNullString(r.get("worker_name")));
+	w_passport_no.setValue(kiboo.checkNullString(r.get("passport_no")));
+}
+
+class wrkclik implements org.zkoss.zk.ui.event.EventListener
+{
+	public void onEvent(Event event) throws UiException
+	{
+		selitm = event.getReference();
+		glob_sel_worker = lbhand.getListcellItemLabel(selitm,0);
+		gsworker_id = lbhand.getListcellItemLabel(selitm,1);
+		showWorkerMeta(glob_sel_worker);
+		updContractBread();
+	}
+}
+worklbclick = new wrkclik();
+
+void showWorkers(String iparent)
+{
+Object[] wrkhds = 
+{
+	new listboxHeaderWidthObj("origid",false,""),
+	new listboxHeaderWidthObj("Worker",true,""),
+	new listboxHeaderWidthObj("Passport",true,""),
+};
+	Listbox newlb = lbhand.makeVWListbox_Width(workers_holder, wrkhds, "workers_lb", 20);
+	sqlstm = "select * from myw where parent_id=" + iparent;
+	trs = gpWFM_GetRows(sqlstm);
+	if(trs.size() == 0) return;
+	newlb.setMold("paging");
+	newlb.addEventListener("onSelect", worklbclick);
+	ArrayList kabom = new ArrayList();
+	String[] fl = { "origid", "worker_name", "passport_no" };
+	for(d : trs)
+	{
+		popuListitems_Data(kabom,fl,d);
+		lbhand.insertListItems(newlb,kiboo.convertArrayListToStringArray(kabom),"false","");
+		kabom.clear();
+	}
+}
+
+void doFunc(Object iwhat)
+{
+	itype = iwhat.getId();
+	sqlstm = "";
+	refresh = refreshsubc = refreshwork = false;
+
+	if(itype.equals("newmaster_b"))
+	{
+		sqlstm = "insert into myh (customer_name,mastervisa) values ('test customer','visa1234')";
+		refresh = true;
+	}
+
+	if(itype.equals("updmaster_b"))
+	{
+		if(glob_sel_masterv.equals("")) return;
+		cnm = kiboo.replaceSingleQuotes( m_customer_name.getValue().trim() );
+		mvn = kiboo.replaceSingleQuotes( m_mastervisa.getValue().trim() );
+		vq = 0;
+		try { vq = Integer.parseInt(m_visaqty.getValue().trim()); } catch (Exception e) {}
+		sqlstm = "update myh set customer_name='" + cnm + "',mastervisa='" + mvn + "',visaqty=" + vq.toString() +
+		" where origid=" + glob_sel_masterv;
+
+		refresh = true;
+	}
+
+	if(itype.equals("delmaster_b"))
+	{
+		if(glob_sel_masterv.equals("")) return;
+		if (Messagebox.show("Delete this record", "Are you sure?", 
+			Messagebox.YES | Messagebox.NO, Messagebox.QUESTION) !=  Messagebox.YES) return;
+
+		sqlstm = "delete from myh where origid=" + glob_sel_masterv;
+		refresh = true;
+	}
+
+	if(itype.equals("subcnew_b"))
+	{
+		if(glob_sel_masterv.equals("")) return;
+		sqlstm = "insert into myc (parent_id,subc_id) values (" + glob_sel_masterv + ",'NEW SUBCONTRACT')";
+		refreshsubc = true;
+	}
+
+	if(itype.equals("updsubc_b"))
+	{
+		if(glob_sel_subcon.equals("")) return;
+		sui = kiboo.replaceSingleQuotes( s_subc_id.getValue().trim() );
+		ssd = dtf2.format(s_cstartdate.getValue());
+		sed = dtf2.format(s_cenddate.getValue());
+		sqlstm = "update myc set subc_id='" + sui + "', cstartdate='" + ssd + "', cenddate='" + sed + "' where origid=" + glob_sel_subcon;
+		refreshsubc = true;
+	}
+
+	if(itype.equals("delsubc_b"))
+	{
+		if(glob_sel_subcon.equals("")) return;
+		if (Messagebox.show("Delete this record", "Are you sure?", 
+			Messagebox.YES | Messagebox.NO, Messagebox.QUESTION) !=  Messagebox.YES) return;
+
+		sqlstm = "delete from myc where origid=" + glob_sel_subcon;
+		refreshsubc = true;
+	}
+
+	if(itype.equals("neworker_b"))
+	{
+		if(glob_sel_subcon.equals("")) return;
+		sqlstm = "insert into myw (parent_id,worker_name,passport_no) values (" + glob_sel_subcon + ",'NEW WORKER','NEW PASSPORT')";
+		refreshwork = true;
+	}
+
+	if(itype.equals("delworker_b"))
+	{
+		if(glob_sel_worker.equals("")) return;
+		if (Messagebox.show("Delete this record", "Are you sure?", 
+			Messagebox.YES | Messagebox.NO, Messagebox.QUESTION) !=  Messagebox.YES) return;
+
+		sqlstm = "delete from myw where origid=" + glob_sel_worker;
+		refreshwork = true;
+	}
+
+	if(itype.equals("updworker_b"))
+	{
+		if(glob_sel_worker.equals("")) return;
+		wnm = kiboo.replaceSingleQuotes(w_worker_name.getValue().trim());
+		wps = kiboo.replaceSingleQuotes(w_passport_no.getValue().trim());
+		sqlstm = "update myw set worker_name='" + wnm + "', passport_no='" + wps + "' where origid=" + glob_sel_worker;
+		refreshwork = true;
+	}
+
+	if(!sqlstm.equals("")) gpWFM_execute(sqlstm);
+	if(refresh) showMasterVisa();
+	if(refreshsubc) showSubcontract(glob_sel_masterv);
+	if(refreshwork) showWorkers(glob_sel_subcon);
+
+}
+
+BOX_COLOR="background:#1c55aa";
+
+]]>
+</zscript>
+
+<style>
+.subhead0 { font-size:12px; font-weight:bold; color:#ffffff; text-shadow: 1px 1px #000000; }
+.subhead1 { font-size:16px; font-weight:bold; color:#ffffff; text-shadow: 1px 1px #000000; }
+.subhead2 { font-size:20px; font-weight:bold; color:#ffffff; text-shadow: 1px 1px #000000; }
+.shadowbox { -moz-box-shadow: 4px 5px 7px #000000; -webkit-box-shadow: 4px 5px 7px #000000; box-shadow: 4px 5px 7px #000000;padding:3px;margin:3px; }
+</style>
+
+<div width="1200px">
+<panel id="${MYPANEL}" title="${MYTITLE} ${MYVERSION}" border="normal" collapsible="true" closable="true" onClose="self.setParent(null)" >
+<panelchildren style="background:#585b6a">
+
+<div sclass="shadowbox" style="background:#a52a2a">
+<label sclass="subhead0" id="ctk_bread" />
+</div>
+<separator height="2px" />
+
+<tabbox> <!-- form area -->
+	<tabs>
+		<tab id="tab0" label="Customer Master-Visa" />
+		<tab id="tab1" label="Workers Contracts" />
+		<tab id="tab2" label="Workers" />
+	</tabs>
+	<tabpanels>
+	<tabpanel> <!-- Customer Master-Visa -->
+		<div sclass="shadowbox" style="${BOX_COLOR}" width="600px" >
+
+		<hbox>
+			<button id="newmaster_b" label="New record" onClick="doFunc(self)" />
+			<button id="delmaster_b" label="Delete" style="font-weight:bold;color:#ff0000" onClick="doFunc(self)" />
+		</hbox>
+		<separator height="3px" />
+		<div id="mastervisa_holder" />
+		<separator height="3px" />
+		<grid>
+			<rows>
+				<row spans="1,3">
+					<label value="Customer" />
+
+					<textbox id="m_customer_name" width="99%" />
+				</row>
+				<row>
+					<label value="Master Visa" />
+					<textbox id="m_mastervisa" width="99%" />
+					<label value="Qty" />
+					<textbox id="m_visaqty" width="30%" />
+				</row>
+				<row spans="4">
+					<hbox>
+						<button id="updmaster_b" label="Update" onClick="doFunc(self)" />
+					</hbox>
+				</row>
+			</rows>
+		</grid>
+
+		</div> <!-- master-visa div -->
+	</tabpanel> <!-- ENDOF Customer Master-Visa -->
+	
+	<tabpanel> <!-- Workers Contracts -->
+		<!-- sub-contract div -->
+		<div sclass="shadowbox" style="${BOX_COLOR}" width="550px" id="subcon_div" visible="false" >
+
+		<hbox>
+			<button id="subcnew_b" label="New subcontract" onClick="doFunc(self)" />
+			<button id="delsubc_b" label="Delete" style="font-weight:bold;color:#ff0000" onClick="doFunc(self)" />
+		</hbox>
+		<separator height="3px" />
+		<div id="subcontract_holder" />
+		<separator height="3px" />
+
+		<grid>
+			<rows>
+				<row spans="1,3">
+					<label value="Contract.ID" />
+					<textbox id="s_subc_id" width="99%" />
+				</row>
+				<row>
+					<label value="Start" />
+					<datebox id="s_cstartdate" format="yyyy-MM-dd" onCreate="kiboo.setTodayDatebox(self)" />
+					<label value="End" />
+					<datebox id="s_cenddate" format="yyyy-MM-dd" onCreate="kiboo.setTodayDatebox(self)" />
+				</row>
+				<row spans="4">
+					<hbox>
+						<button id="updsubc_b" label="Update" onClick="doFunc(self)" />
+					</hbox>
+				</row>
+
+			</rows>
+		</grid>
+		</div> <!-- sub-contract div -->
+	</tabpanel> <!-- ENDOF Workers Contracts -->
+	
+	<tabpanel> <!-- Workers -->
+		<!-- workers div -->
+		<div sclass="shadowbox" style="${BOX_COLOR}" width="550px" id="workers_div" visible="false" >
+
+		<hbox>
+			<button id="neworker_b" label="New worker" onClick="doFunc(self)" />
+			<button id="delworker_b" label="Delete" style="font-weight:bold;color:#ff0000" onClick="doFunc(self)" />
+		</hbox>
+		<separator height="3px" />
+		<div id="workers_holder" />
+		<separator height="3px" />
+
+		<grid>
+			<rows>
+				<row>
+					<label value="Worker name" />
+					<textbox id="w_worker_name" width="99%" />
+				</row>
+				<row>
+					<label value="Passport No." />
+					<textbox id="w_passport_no" width="99%" />
+				</row>
+				<row spans="4">
+					<hbox>
+						<button id="updworker_b" label="Update" onClick="doFunc(self)" />
+					</hbox>
+				</row>
+
+			</rows>
+		</grid>
+		</div> <!-- workers div -->
+	</tabpanel> <!-- ENDOF Workers -->
+
+	</tabpanels>
+</tabbox>
+
+<!--
+<button label="testme" onClick="domysql()" />
+<textbox id="debugbox" multiline="true" width="50%" height="100px" />
+-->
+<zscript>
+<![CDATA[
+
+void domysql()
+{
+sqlstm = "select * from clients limit 5";
+recs = gpWFM_GetRows(sqlstm);
+alert(recs);
+}
+
+showMasterVisa();
+
+]]>
+</zscript>
+</panelchildren>
+</panel>
+</div>
+</zk>
+

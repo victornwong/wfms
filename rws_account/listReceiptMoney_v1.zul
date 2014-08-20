@@ -1,0 +1,322 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?page id="lstrecpmoymod"?>
+<zk>
+<zscript src="../rwglobal/rwglobaldefs.zs" />
+<zscript src="../rwglobal/formMaker_v1.zs" />
+<zscript src="../rwglobal/rwsqlfuncs.zs" />
+<zscript src="../rwglobal/fc6_CustomerSelector.zs" />
+<zscript src="../rwglobal/uploadedWorksheet_v1.zs" />
+<zscript>
+<![CDATA[
+MYTITLE = "List-out FC6 Receipts";
+MYVERSION = "v0.1";
+MYPANEL = "lstrecpdpan";
+/*
+Title		: List-out FC6 receipts
+Written by	: Victor Wong
+Dated		: 04/10/2013
+
+Revisions:
+06/03/2014: Mira req dig by amount
+
+*/
+import java.util.*;
+import java.text.*;
+import org.victor.*;
+sechand = new SecurityFuncs();
+
+myincludeid = Executions.getCurrent().getParameter("myid");
+useraccessobj = sechand.getUserAccessObject();
+if(useraccessobj == null) Executions.sendRedirect(MAINLOGIN_PAGE);
+
+kiboo = new Generals();
+sqlhand = new SqlFuncs();
+lbhand = new ListboxHandler();
+guihand = new GuiFuncs();
+luhand = new LookupFuncs();
+
+DecimalFormat nf3 = new DecimalFormat("#####0.00");
+DecimalFormat nf4 = new DecimalFormat("###,##0.00");
+
+lastlisttype = 0;
+
+Object[] chqrechds =
+{
+	new listboxHeaderWidthObj("Dated",true,"70px"),
+	new listboxHeaderWidthObj("Receipt",true,"70px"),
+	new listboxHeaderWidthObj("Customer",true,""),
+	new listboxHeaderWidthObj("ChqNo/Tfx",true,"120px"),
+	new listboxHeaderWidthObj("Amount",true,"100px"),
+	new listboxHeaderWidthObj("Cust.Type",true,"100px"),
+	new listboxHeaderWidthObj("Narration",true,""),
+	new listboxHeaderWidthObj("Remarks",true,""),
+};
+// itype: 1=by date and search-text, 2=by amount
+void loadfc6Receipts(int itype)
+{
+	lastlisttype = itype;
+	sdate = kiboo.getDateFromDatebox(startdate);
+	edate = kiboo.getDateFromDatebox(enddate);
+	sct = kiboo.replaceSingleQuotes( schtextb.getValue().trim() );
+	amt = kiboo.replaceSingleQuotes( amt_tb.getValue().trim() );
+
+	try { k = Float.parseFloat(amt); } catch (Exception e) { amt = "0"; }
+
+	sqlnm = "";
+	if(!sct.equals("")) sqlnm = "and ac.name like '%" + sct + "%' ";
+	if(!amt.equals("") && itype == 2) sqlnm += "and d.originalamount=" + amt + " ";
+
+	sqlstm = "select convert(datetime, dbo.ConvertFocusDate(d.date_), 112) as voucherdate, " +
+	"d.voucherno, d.originalamount, r.chequenoyh, r.narrationyh, r.remarksyh, ac.name as customer_name, " +
+	"case ac.type when 195 then 'RENTAL' " +
+	"when 211 then 'RENTAL' " +
+	"when 163 then 'REMARKETING' " +
+	"when 179 then 'SUNDRY' else 'UNKNOWN' " +
+	"end as act_type " +
+	"from data d left join u0010 r on r.extraid = d.extraheaderoff "+
+	"left join refrn f on d.BillWiseOff=f.RefId " +
+	"left join mr000 ac on f.code = ac.masterid " +
+	"where d.vouchertype=4608 and " +
+	"convert(datetime, dbo.ConvertFocusDate(d.date_), 112) between '" + sdate + "' and '" + edate + "' " +
+	"and ac.name is not null " + sqlnm +
+	"group by d.voucherno,d.date_,d.amount1, d.amount2, d.originalamount, r.chequenoyh, ac.name, ac.type, " +
+	"r.narrationyh, r.remarksyh " +
+	"order by d.voucherno;";
+
+	Listbox newlb = lbhand.makeVWListbox_Width(cheqsrec_holder, chqrechds, "cheqrecv_lb", 23);
+
+	trecs = sqlhand.rws_gpSqlGetRows(sqlstm);
+	if(trecs.size() == 0) return;
+	newlb.setMold("paging");
+	//newlb.addEventListener("onSelect", new cheqrecclik());
+
+	amtdone = amtpend = amtrental = amtremark = amtsundry = amtunkw = amttokyo = 0.0;
+	ArrayList kabom = new ArrayList();
+	for(d : trecs)
+	{
+		kabom.add( dtf2.format(d.get("voucherdate")) );
+		kabom.add( kiboo.checkNullString(d.get("voucherno")) );
+		custn = kiboo.checkNullString(d.get("customer_name")).trim().toUpperCase();
+		kabom.add(custn);
+		kabom.add( kiboo.checkNullString(d.get("chequenoyh")) );
+		kabom.add( (d.get("originalamount") == null) ? "" : nf3.format(d.get("originalamount")) );
+		kk = kiboo.checkNullString(d.get("act_type"));
+		kabom.add(kk);
+
+		styl = "";
+
+		try {
+		dmt = d.get("originalamount");
+		if(kk.equals("RENTAL")) amtrental += dmt;
+		if(kk.equals("REMARKETING") && custn.indexOf("TOKYO") == -1) amtremark += dmt;
+		if(kk.equals("SUNDRY")) amtsundry += dmt;
+		if(kk.equals("UNKNOWN")) amtunkw += dmt;
+		if(custn.indexOf("TOKYO") != -1) { amttokyo += dmt; styl="font-size:9px;background:#56815e"; }
+		} catch (Exception e) {}
+
+		kabom.add( kiboo.checkNullString(d.get("narrationyh")) );
+		kabom.add( kiboo.checkNullString(d.get("remarksyh")) );
+
+		lbhand.insertListItems(newlb,kiboo.convertArrayListToStringArray(kabom),"false",styl);
+		kabom.clear();
+	}
+
+	//amtdone_lbl.setValue( nf4.format(amtdone) );
+	//amtpend_lbl.setValue( nf4.format(amtpend) );
+	amtgtotal_lbl.setValue( nf4.format(amtrental + amtremark + amtsundry + amtunkw ) );
+
+	amt_amtrental_lbl.setValue( nf4.format(amtrental) );
+	amt_amtremark_lbl.setValue( nf4.format(amtremark) );
+	amt_amtsundry_lbl.setValue( nf4.format(amtsundry) );
+	amt_amtunkw_lbl.setValue( nf4.format(amtunkw) );
+	amtctctotal_lbl.setValue( nf4.format(amttokyo) );
+
+}
+
+void exportReceiptRecs()
+{
+	sdate = kiboo.getDateFromDatebox(exp_startdate);
+    edate = kiboo.getDateFromDatebox(exp_enddate);
+    sct = kiboo.replaceSingleQuotes( schtextb.getValue().trim() );
+
+	sqlnm = "";
+	if(!sct.equals("")) sqlnm = "and ac.name like '%" + sct + "%' ";
+
+   	sqlstm = "select convert(datetime, dbo.ConvertFocusDate(d.date_), 112) as voucherdate, " +
+	"d.voucherno, d.originalamount, r.chequenoyh, r.narrationyh, r.remarksyh, ac.name as customer_name, " +
+	"case ac.type when 195 then 'RENTAL' " +
+	"when 211 then 'RENTAL' " +
+	"when 163 then 'REMARKETING' " +
+	"when 179 then 'SUNDRY' else 'UNKNOWN' " +
+	"end as act_type " +
+	"from data d left join u0010 r on r.extraid = d.extraheaderoff "+
+	"left join refrn f on d.BillWiseOff=f.RefId " +
+	"left join mr000 ac on f.code = ac.masterid " +
+	"where d.vouchertype=4608 and " +
+	"convert(datetime, dbo.ConvertFocusDate(d.date_), 112) between '" + sdate + "' and '" + edate + "' " +
+	"and ac.name is not null " + sqlnm +
+	"group by d.voucherno,d.date_,d.amount1, d.amount2, d.originalamount, r.chequenoyh, ac.name, ac.type, " +
+	"r.narrationyh, r.remarksyh " +
+	"order by d.voucherno;";
+
+	trecs = sqlhand.rws_gpSqlGetRows(sqlstm);
+	if(trecs.size() == 0) { guihand.showMessageBox("Nothing to export.."); return; }
+
+   	startadder = 1;
+	rowcount = 0;
+
+	Workbook wb = new HSSFWorkbook();
+	Sheet sheet = wb.createSheet("RECEIVALS");
+	Font wfont = wb.createFont();
+	wfont.setFontHeightInPoints((short)8);
+	wfont.setFontName("Arial");
+
+	String[] rhds = { "Date","ReceiptNo","Customer","Chq/Tfx","Amount","Type","Narration","Remarks" };
+	for(i=0;i<rhds.length;i++)
+	{
+		POI_CellSetAllBorders(wb,excelInsertString(sheet,rowcount,i,rhds[i]),wfont,true,"");
+	}
+
+	rowcount++;
+
+	for(d : trecs)
+	{
+		excelInsertString(sheet,rowcount,0, dtf2.format(d.get("voucherdate")) );
+		excelInsertString(sheet,rowcount,1, kiboo.checkNullString(d.get("voucherno")) );
+		excelInsertString(sheet,rowcount,2, kiboo.checkNullString(d.get("customer_name")) );
+		excelInsertString(sheet,rowcount,3, kiboo.checkNullString(d.get("chequenoyh")) );
+		excelInsertNumber(sheet,rowcount,4, (d.get("originalamount") == null) ? "0" : nf3.format(d.get("originalamount")) );
+		excelInsertString(sheet,rowcount,5, kiboo.checkNullString(d.get("act_type")) );
+		excelInsertString(sheet,rowcount,6, kiboo.checkNullString(d.get("narrationyh")) );
+		excelInsertString(sheet,rowcount,7, kiboo.checkNullString(d.get("remarksyh")) );
+		rowcount++;
+	}
+
+	jjfn = "cheqbankrecvList_r.xls";
+	outfn = session.getWebApp().getRealPath("tmp/" + jjfn);
+	FileOutputStream fileOut = new FileOutputStream(outfn);
+	wb.write(fileOut); // Write Excel-file
+	fileOut.close();
+
+	downloadFile(kasiexport,jjfn,outfn);
+	expchqr_pop.close();
+}
+
+]]>
+</zscript>
+
+<style>
+.subhead2 {	font-size:24px;	font-weight:bold; color:#ffffff; text-shadow: 1px 1px #000000; }
+.subhead1 {	font-size:18px;	font-weight:bold; color:#ffffff; text-shadow: 1px 1px #000000; }
+</style>
+
+<popup id="expchqr_pop">
+<div style="background:#628821; -moz-box-shadow: 4px 5px 7px #000000; -webkit-box-shadow: 4px 5px 7px #000000;
+box-shadow: 4px 5px 7px #000000;padding:3px;margin:3px">
+
+<label sclass="subhead1" value="Export cheque/payment receival list" />
+<separator height="10px" />
+<grid>
+	<rows>
+		<row>
+			<label value="Start date" />
+			<datebox id="exp_startdate" format="yyyy-MM-dd" onCreate="kiboo.setTodayDatebox(self)" />
+			<label value="End date" />
+			<datebox id="exp_enddate" format="yyyy-MM-dd" onCreate="kiboo.setTodayDatebox(self)" />
+		</row>
+		<row spans="4">
+			<hbox>
+				<button id="expundelv_b" label="Export cheque/bank-in list" onClick="exportReceiptRecs()" />
+			</hbox>
+		</row>
+	</rows>
+</grid>
+</div>
+</popup>
+
+<div width="1200px">
+<panel id="${MYPANEL}" title="${MYTITLE} ${MYVERSION}" border="normal" collapsible="true" closable="true" >
+<panelchildren>
+
+<div style="background:#2e3436; -moz-box-shadow: 4px 5px 7px #000000; -webkit-box-shadow: 4px 5px 7px #000000;
+box-shadow: 4px 5px 7px #000000;padding:3px;margin:3px">
+
+<grid id="datboxgrid" width="700px">
+	<rows>
+		<row>
+			<label value="Start date" style="font-size:9px" />
+			<datebox id="startdate" format="yyyy-MM-dd" style="font-size:9px" onCreate="kiboo.setTodayDatebox(self)" />
+			<label value="End date" style="font-size:9px" />
+			<datebox id="enddate" format="yyyy-MM-dd" style="font-size:9px" onCreate="kiboo.setTodayDatebox(self)" />
+			<button label="Load receipts" onClick="loadfc6Receipts(1)" />
+			<button label="Export receival list" onClick="expchqr_pop.open(self)" />
+		</row>
+		<row>
+			<label value="Search" style="font-size:9px" />
+			<textbox id="schtextb" style="font-size:9px" width="99%" />
+			<label value="Amount" style="font-size:9px" />
+			<textbox id="amt_tb" style="font-size:9px" width="99%" />
+			<button label="Dig amount" style="font-size:9px" onClick="loadfc6Receipts(2)" />
+		</row>
+	</rows>
+</grid>
+
+<separator height="5px" />
+
+<hbox>
+
+<div id="cheqsrec_holder" width="1000px" />
+
+<vbox>
+<!--
+	<label sclass="subhead1" value="DONE Total:" />
+	<label sclass="subhead2" id="amtdone_lbl" />
+	<separator height="2px" />
+	<label sclass="subhead1" style="color:#ff0000" value="PENDING Total:" />
+	<label sclass="subhead2" style="color:#ff0000" id="amtpend_lbl" />
+	<separator height="2px" />
+-->
+	<label sclass="subhead1" style="color:#9db91d" value="Total CTC:" />
+	<label sclass="subhead2" style="color:#9db91d" id="amtctctotal_lbl" />
+	<separator height="5px" />
+	<separator height="3px" bar="true" />
+	<separator height="5px" />
+
+	<label sclass="subhead1" value="Rental:" />
+	<label sclass="subhead1" id="amt_amtrental_lbl" />
+	<separator height="2px" />
+	
+	<label sclass="subhead1" value="Remarketing:" />
+	<label sclass="subhead1" id="amt_amtremark_lbl" />
+	<separator height="2px" />
+
+	<label sclass="subhead1" value="Sundry:" />
+	<label sclass="subhead1" id="amt_amtsundry_lbl" />
+	<separator height="2px" />
+
+	<label sclass="subhead1" value="UNKNOWN:" />
+	<label sclass="subhead1" id="amt_amtunkw_lbl" />
+	<separator height="5px" />
+
+	<label sclass="subhead1" style="color:#f57900" value="Total All:" />
+	<label sclass="subhead2" style="color:#f57900" id="amtgtotal_lbl" />
+
+	<label id="debugbox" multiline="true" />
+</vbox>
+
+</hbox>
+
+</div>
+
+<div id="kasiexport" visible="false" />
+
+<zscript>
+<![CDATA[
+
+]]>
+</zscript>
+</panelchildren>
+</panel>
+</div>
+</zk>
+

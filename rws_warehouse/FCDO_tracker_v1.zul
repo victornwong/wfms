@@ -1,0 +1,320 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?page id="fcdotrackmod"?>
+<zk>
+<zscript src="../rwglobal/rwglobaldefs.zs" />
+<zscript src="../rwglobal/fc6_CustomerSelector.zs" />
+<zscript src="../rwglobal/formMaker_v1.zs" />
+<zscript src="../rwglobal/rwsqlfuncs.zs" />
+<zscript src="../rwglobal/systemAudit.zs" />
+<zscript src="../rwglobal/uploadDocu_v1.zs" />
+<zscript src="../rwglobal/emailfuncs.zs" />
+<zscript src="../rwglobal/uploadedWorksheet_v1.zs" />
+<zscript>
+<![CDATA[
+MYTITLE = "FOCUS6 Delivery-Order Tracker";
+MYVERSION = "v0.1";
+MYPANEL = "dotrkckakpan";
+/*
+Title		: FC6 DO Tracker
+Written by	: Victor Wong
+Dated		: 26/02/2014
+
+Revisions:
+*/
+import java.util.*;
+import java.text.*;
+import org.victor.*;
+sechand = new SecurityFuncs();
+
+myincludeid = Executions.getCurrent().getParameter("myid");
+useraccessobj = sechand.getUserAccessObject();
+if(useraccessobj == null) Executions.sendRedirect(MAINLOGIN_PAGE);
+
+kiboo = new Generals();
+sqlhand = new SqlFuncs();
+lbhand = new ListboxHandler();
+guihand = new GuiFuncs();
+luhand = new LookupFuncs();
+dmshand = new DMSFuncs();
+
+last_listdo_type = 0;
+glob_sel_do = glob_sel_exi = "";
+
+Object getFC6DO_rec(String iwhat)
+{
+	sqlstm = "select convert(datetime, dbo.ConvertFocusDate(d.date_), 112) as vdate, d.voucherno, " +
+	"c.name as customer_name, k.deliverystatusyh, k.deliverydateyh, k.transporteryh, k.deliveryrefyh," +
+	"k.narrationyh, k.referenceyh from data d " +
+	"left join mr000 c on c.masterid = d.bookno " +
+	"left join u001c k on k.extraid = d.extraheaderoff " +
+	"where d.vouchertype=6144 " +
+	"and d.voucherno='" + iwhat + "'";
+
+	return sqlhand.rws_gpSqlFirstRow(sqlstm);
+}
+
+void showFC6DO_meta(String iwhat)
+{
+	dr = getFC6DO_rec(iwhat);
+	if(dr == null) return;
+
+	String[] fl = { "customer_name", "vdate", "referenceyh", "narrationyh", 
+	"transporteryh", "deliveryrefyh", "deliverystatusyh", "deliverydateyh" };
+
+	Object[] ob = { f_customer_name, f_vdate, f_referenceyh, f_narrationyh,
+	f_transporteryh, f_deliveryrefyh, f_deliverystatusyh, f_deliverydateyh };
+
+	f_voucherno.setValue(iwhat);
+	populateUI_Data(ob,fl,dr);
+
+	fillDocumentsList(documents_holder,DO_PREFIX,iwhat);
+	showDO_items(iwhat);
+	workarea.setVisible(true);
+}
+
+Object[] doitmhds = 
+{
+	new listboxHeaderWidthObj("No.",true,"30px"),
+	new listboxHeaderWidthObj("Item description",true,""),
+	new listboxHeaderWidthObj("Asset.Tag",true,"100px"),
+	new listboxHeaderWidthObj("Qty",true,"70px"),
+};
+
+void showDO_items(String iwhat)
+{
+	Listbox newlb = lbhand.makeVWListbox_Width(doitems_holder, doitmhds, "doitems_lb", 22);
+
+	sqlstm = "select s.name as product_name, s.code2, iy.qty2 from data d " +
+	"left join mr000 c on c.masterid = d.bookno " +
+	"left join mr001 s on s.masterid = d.productcode " +
+	"left join u001c di on di.extraid = d.extraheaderoff " +
+	"left join mr008 ro on ro.masterid = d.tags6 " +
+	"left join indta iy on iy.salesid = d.salesoff " +
+	"where d.vouchertype=6144 and d.productcode<>0 and d.voucherno='" + iwhat+ "'";
+
+	trs = sqlhand.rws_gpSqlGetRows(sqlstm);
+	if(trs.size() == 0) return;
+	newlb.setMold("paging");
+	//newlb.addEventListener("onSelect", doclikor);
+	lnc = 1;
+	ArrayList kabom = new ArrayList();
+	for(d : trs)
+	{
+		kabom.add( lnc.toString() + "." );
+		kabom.add( kiboo.checkNullString(d.get("product_name")) );
+		kabom.add( kiboo.checkNullString(d.get("code2")) );
+		qty = nf0.format(d.get("qty2")).replaceAll("-","");
+		kabom.add(qty);
+		lbhand.insertListItems(newlb,kiboo.convertArrayListToStringArray(kabom),"false","");
+		lnc++;
+		kabom.clear();
+	}
+}
+
+Object[] doshds = 
+{
+	new listboxHeaderWidthObj("DO",true,"60px"),
+	new listboxHeaderWidthObj("Dated",true,"70px"),
+	new listboxHeaderWidthObj("Customer",true,""),
+	new listboxHeaderWidthObj("Status",true,"70px"),
+	new listboxHeaderWidthObj("D.Date",true,"70px"),
+	new listboxHeaderWidthObj("Transp",true,"80px"),
+	new listboxHeaderWidthObj("D.Ref",true,"80px"),
+	new listboxHeaderWidthObj("Narration",true,""),
+	new listboxHeaderWidthObj("Refer",true,"80px"),
+	new listboxHeaderWidthObj("dmid",false,""),
+};
+
+class doclike implements org.zkoss.zk.ui.event.EventListener
+{
+	public void onEvent(Event event) throws UiException
+	{
+		selitm = event.getReference();
+		glob_sel_do = lbhand.getListcellItemLabel(selitm,0);
+		glob_sel_exi = lbhand.getListcellItemLabel(selitm,9);
+		showFC6DO_meta(glob_sel_do);
+	}
+}
+doclikor = new doclike();
+
+void listFCDOs(int itype)
+{
+	last_listdo_type = itype;
+	sdate = kiboo.getDateFromDatebox(startdate);
+    edate = kiboo.getDateFromDatebox(enddate);
+    scht = kiboo.replaceSingleQuotes(searhtxt_tb.getValue()).trim();
+	Listbox newlb = lbhand.makeVWListbox_Width(dos_holder, doshds, "dos_lb", 22);
+
+	sqlstm = "select convert(datetime, dbo.ConvertFocusDate(d.date_), 112) as vdate, d.voucherno, " +
+	"c.name as customer_name, k.deliverystatusyh, k.deliverydateyh, k.transporteryh, k.deliveryrefyh," +
+	"k.narrationyh, k.referenceyh, d.extraheaderoff from data d " +
+	"left join mr000 c on c.masterid = d.bookno " +
+	"left join u001c k on k.extraid = d.extraheaderoff " +
+	"where d.vouchertype=6144 " +
+	"and convert(datetime, dbo.ConvertFocusDate(d.date_), 112) between '" + sdate + "' and '" + edate + "' ";
+
+	switch(itype)
+	{
+		case 2:
+			sqlstm += "and (d.voucherno like '%" + scht + "%' or c.name like '%" + scht + "%' or k.deliveryrefyh like '%" + scht +
+			"%' or k.narrationyh like '%" + scht + "%' or k.referenceyh like '%" + scht + "%') ";
+			break;
+	}
+
+	sqlstm += " group by d.date_, d.voucherno, c.name, k.deliverystatusyh, k.deliverydateyh, k.transporteryh," +
+	"k.deliveryrefyh, k.narrationyh,k.referenceyh, d.extraheaderoff " +
+	"order by d.voucherno;";
+
+	trs = sqlhand.rws_gpSqlGetRows(sqlstm);
+	if(trs.size() == 0) return;
+	newlb.setMold("paging");
+	newlb.addEventListener("onSelect", doclikor);
+	ArrayList kabom = new ArrayList();
+	
+	String[] fl = { "voucherno", "vdate", "customer_name", "deliverystatusyh", "deliverydateyh", "transporteryh",
+	"deliveryrefyh", "narrationyh", "referenceyh", "extraheaderoff" };
+	
+	for(d : trs)
+	{
+		popuListitems_Data(kabom,fl,d);
+		lbhand.insertListItems(newlb,kiboo.convertArrayListToStringArray(kabom),"false","");
+		kabom.clear();
+	}
+}
+
+void updateFC6do()
+{
+	if(glob_sel_exi.equals("")) return;
+	tsp = f_transporteryh.getSelectedItem().getLabel();
+	tsf = kiboo.replaceSingleQuotes( f_deliveryrefyh.getValue().trim() );
+	dls = f_deliverystatusyh.getSelectedItem().getLabel();
+	ddt = kiboo.replaceSingleQuotes( f_deliverydateyh.getValue().trim() );
+	sqlstm = "update u001c set deliverystatusyh='" + dls + "', deliverydateyh='" + ddt + "'," +
+	"transporteryh='" + tsp + "', deliveryrefyh='" + tsf + "' where extraid=" + glob_sel_exi;
+
+	sqlhand.rws_gpSqlExecuter(sqlstm);
+	listFCDOs(last_listdo_type); // refresh
+}
+
+]]>
+</zscript>
+
+<!-- update file description popup -->
+<popup id="updatefiledesc_popup">
+<groupbox width="400px">
+	<caption id="updatefiledesc_label" />
+	<label value="Description" style="font-size:9px" />
+	<textbox id="update_file_description" multiline="true" height="70px" width="99%" style="font-size:9px" />
+	<separator height="3px" />
+	<hbox>
+		<button label="Update" style="font-size:9px" onClick="updateFileDescription(documents_holder,DO_PREFIX,glob_sel_do)" />
+		<button label="Close" style="font-size:9px" onClick="updatefiledesc_popup.close()" />
+	</hbox>
+</groupbox>
+</popup>
+
+<!-- upload a file popup -->
+<popup id="uploadfile_popup">
+<groupbox>
+<caption label="Upload a file" />
+	<grid>
+		<rows>
+			<row>
+				<label value="Filename" style="font-size:9px" />
+				<textbox id="fileupl_file_title" width="200px" style="font-size:9px" />
+			</row>
+			<row>
+				<label value="Description" style="font-size:9px" />
+				<textbox id="fileupl_file_description" multiline="true" height="60px" width="200px" style="font-size:9px" />
+			</row>
+		</rows>
+	</grid>
+</groupbox>
+<separator height="3px" />
+<hbox>
+	<button label="Select file" onClick="uploadFile(documents_holder,DO_PREFIX,glob_sel_do)" style="font-size:9px" />
+	<button label="Close" onClick="uploadfile_popup.close()"  style="font-size:9px" />
+</hbox>
+</popup>
+
+<style>
+.subhead { font-size:16px; font-weight:bold; color:#ffffff; text-shadow: 1px 1px #000000; }
+.subhead2 { font-size:24px; font-weight:bold; color:#ffffff; text-shadow: 1px 1px #000000; }
+</style>
+
+<div width="1200px">
+<panel id="${MYPANEL}" title="${MYTITLE} ${MYVERSION}" border="normal" collapsible="true" closable="true" >
+<panelchildren>
+
+<grid width="600px">
+	<rows>
+		<row style="background:#2e3436;" >
+			<label value="Start" style="font-size:9px;color:#ffffff" />
+			<datebox id="startdate" format="yyyy-MM-dd" style="font-size:9px" onCreate="kiboo.setTodayDatebox(self)" />
+			<label value="End" style="font-size:9px;color:#ffffff" />
+			<datebox id="enddate" format="yyyy-MM-dd" style="font-size:9px" onCreate="kiboo.setTodayDatebox(self)" />
+			<button label="Load DOs by date" style="font-size:9px;font-weight:bold" onClick="listFCDOs(1)" />
+		</row>
+		<row style="background:#2e3436;" spans="1,1,1,2" >
+			<label value="Search" style="font-size:9px;color:#ffffff" />
+			<textbox id="searhtxt_tb" width="99%" style="font-size:9px" />
+			<button label="Search" style="font-size:9px" onClick="listFCDOs(2)" />
+		</row>
+	</rows>
+</grid>
+<separator height="2px" />
+
+<div style="background:#2e3436; -moz-box-shadow: 4px 5px 7px #000000; -webkit-box-shadow: 4px 5px 7px #000000;
+box-shadow: 4px 5px 7px #000000;padding:3px;margin:3px" id="dos_holder" />
+<separator height="2px" />
+
+<div style="background:#2e3436; -moz-box-shadow: 4px 5px 7px #000000; -webkit-box-shadow: 4px 5px 7px #000000;
+box-shadow: 4px 5px 7px #000000;padding:3px;margin:3px" id="workarea" visible="false" >
+<hbox>
+	<div>
+		<label sclass="subhead" value="FOCUS6 DO Metadata" />
+		<separator height="2px" />
+
+		<div id="qtform_holder" width="600px" />
+		<separator height="2px" />
+		<button label="Update delivery status" style="font-weight:bold" onClick="updateFC6do()" />
+		<separator height="3px" />
+
+		<div style="background:#555753; -moz-box-shadow: 4px 5px 7px #000000; -webkit-box-shadow: 4px 5px 7px #000000;
+		box-shadow: 4px 5px 7px #000000;padding:3px;margin:3px" width="600px" >
+		<label sclass="subhead" value="ATTACHMENT / DOCUMENTS" />
+		<separator height="3px" />
+		<hbox>
+			<button id="uploaddoc_btn" label="Upload file" style="font-size:9px"
+				onClick="showUploadPopup(DO_PREFIX,glob_sel_do)" />
+			<button id="viewdoc_btn" label="View file" style="font-size:9px" onClick="viewFile()" />
+			<button id="editdoc_btn" label="Update" style="font-size:9px" onClick="updatefiledesc_popup.open(self)" />
+			<button id="deletedoc_btn" label="Delete" style="font-size:9px"
+				onClick="deleteFile(documents_holder,DO_PREFIX,glob_sel_do)" />
+		</hbox>
+		<separator height="3px" />
+		<div id="documents_holder" />
+		</div>
+	</div>
+
+	<div>
+		<label sclass="subhead" value="DO Items" />
+		<separator height="2px" />
+		<div id="doitems_holder" />
+	</div>
+
+</hbox>
+</div>
+
+<zscript>
+<![CDATA[
+
+dometaform = dynamicForm(qtform_holder, "dometaform_grid", "31");
+
+]]>
+</zscript>
+</panelchildren>
+</panel>
+</div>
+</zk>
+

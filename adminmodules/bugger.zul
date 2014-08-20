@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?page id="bugger_mod"?>
+<zk>
+<zscript src="../rwglobal/rwglobaldefs.zs" />
+<zscript>
+<![CDATA[
+MYTITLE = "Admin bugger";
+MYVERSION = "v0.1";
+MYPANEL = "BUGGERmm";
+/*
+Title		: bugger for admin - test out stuff
+Written by	: Victor Wong
+
+Revisions:
+*/
+/*
+import java.util.*;
+import java.text.*;
+import java.lang.Float;
+import groovy.sql.Sql;
+import org.zkoss.zk.ui.*;
+import org.zkoss.zk.zutl.*;
+*/
+
+import java.awt.Color;
+import java.io.FileOutputStream;
+/*
+import com.lowagie.text.*;
+import com.lowagie.text.pdf.PdfWriter;
+import com.lowagie.text.pdf.PdfPCell;
+import com.lowagie.text.pdf.PdfPTable;
+//import com.lowagie.text.html.HtmlWriter;
+import com.lowagie.text.pdf.PdfContentByte;
+import com.lowagie.text.pdf.Barcode39;
+*/
+/*
+import com.itextpdf.text.DocumentException;
+import com.itextpdf.text.Image;
+import com.itextpdf.text.pdf.*;
+import com.itextpdf.text.*;
+*/
+
+import java.awt.*;
+import java.awt.image.*;
+import java.awt.geom.*;
+import org.apache.pdfbox.pdmodel.*;
+import org.apache.pdfbox.pdmodel.font.*;
+import org.apache.pdfbox.pdmodel.edit.*;
+
+import com.google.gdata.client.calendar.*;
+import com.google.gdata.data.calendar.*;
+import com.google.gdata.data.calendar.*;
+import com.google.gdata.util.*;
+
+import java.net.*;
+import java.io.*;
+
+import java.sql.DriverManager;
+import java.sql.Connection;
+import java.sql.SQLException;
+ 
+import org.victor.*;
+
+sechand = new SecurityFuncs();
+
+myincludeid = Executions.getCurrent().getParameter("myid");
+useraccessobj = sechand.getUserAccessObject();
+if(useraccessobj == null) Executions.sendRedirect(MAINLOGIN_PAGE);
+
+kiboo = new Generals();
+sqlhand = new SqlFuncs();
+lbhand = new ListboxHandler();
+guihand = new GuiFuncs();
+luhand = new LookupFuncs();
+
+void testMysql()
+{
+	Class.forName("com.mysql.jdbc.Driver");
+	Connection connection = null;
+	connection = DriverManager.getConnection("jdbc:mysql://localhost:3306/wfmdb","root", "dell");
+	alert(connection);
+	connection.close();
+}
+
+]]>
+</zscript>
+
+<?component name="tipcolor" macroURI="/macros/macrocomp1.zul"?>
+
+<div width="1200px">
+<panel id="${MYPANEL}" title="${MYTITLE} ${MYVERSION}" border="normal" collapsible="true" closable="true" height="600px" >
+<panelchildren>
+
+<!--
+<iframe style="width:99%;height:700px" src="http://localhost:8080/rws_d/adminmodules/helloprocessing.html" />
+-->
+
+<button label="test mysql" onClick="testMysql()" />
+
+<!-- <include src="adminmodules/helloprocessing.html" /> -->
+
+<zscript>
+<![CDATA[
+
+]]>
+</zscript>
+</panelchildren>
+</panel>
+</div>
+</zk>
+

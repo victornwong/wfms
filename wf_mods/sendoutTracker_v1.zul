@@ -1,0 +1,389 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?page id="sendout_mod"?>
+<zk>
+<zscript src="../wf_global/wfglobaldefs.zs" />
+<zscript src="../wf_global/wfsqlfuncs.zs" />
+<zscript src="../wf_global/formMaker_v1.zs" />
+<zscript>
+<![CDATA[
+MYTITLE = "Send-out Tracker";
+MYVERSION = "v0.1";
+MY_ID = "sendoutgdid";
+/*
+Written by	: Victor Wong
+Dated		: 15/03/2014
+NOTES:
+*/
+/*
+import org.victor.*;
+sechand = new SecurityFuncs();
+myincludeid = Executions.getCurrent().getParameter("myid");
+useraccessobj = sechand.getUserAccessObject();
+if(useraccessobj == null) Executions.sendRedirect(MAINLOGIN_PAGE);
+*/
+kiboo = new Generals();
+sqlhand = new SqlFuncs();
+lbhand = new ListboxHandler();
+guihand = new GuiFuncs();
+luhand = new LookupFuncs();
+
+M_PIN = "1010";
+
+glob_sel_sendout = "";
+
+void showSendoutMeta(String iwhat)
+{
+String[] fl = { "Mailing_Date", "Airway_Bill", "Receipient", "Our_Reference", "Date_Received", "Received_By", "Employer",
+"CLA_Replacement_CLA_Reference","Quota_Allocated","With_Without_VISA","VISA_No_1","Visa_Headcount_1","VISA_No_2","Visa_Headcount_2",
+"VISA_No_3","Visa_Headcount_3","VISA_No_4","Visa_Headcount_4","With_Without_Contract","Sent","Courier_Company","Courier_Company_Reference",
+"Remarks", "sendto_name", "sendto_addr" };
+
+Object[] ob = { Mailing_Date, Airway_Bill, Receipient, Our_Reference, Date_Received, Received_By, Employer, CLA_Replacement_CLA_Reference,
+Quota_Allocated, With_Without_VISA, VISA_No_1, Visa_Headcount_1, VISA_No_2, Visa_Headcount_2, VISA_No_3, Visa_Headcount_3, VISA_No_4,
+Visa_Headcount_4, With_Without_Contract, Sent, Courier_Company, Courier_Company_Reference, Remarks, sendto_name, sendto_addr };
+
+	r = getSendoutRec(iwhat);
+	if(r == null) return;
+	populateUI_Data(ob,fl,r);
+	workarea.setVisible(true);
+	blindTings_withTitle(blindme,seArea,blindtit);
+	sonum_lbl.setValue(iwhat);
+}
+
+class sndoclki implements org.zkoss.zk.ui.event.EventListener
+{
+	public Object selitem;
+	public void onEvent(Event event) throws UiException
+	{
+		selitem = event.getReference();
+		glob_sel_sendout = lbhand.getListcellItemLabel(selitem,0);
+		showSendoutMeta(glob_sel_sendout);
+	}
+}
+sendoutlciker = new sndoclki();
+
+void listSendout()
+{
+Object[] sohds = 
+{
+	new listboxHeaderWidthObj("SO#",true,"50px"),
+	new listboxHeaderWidthObj("Dated",true,"70px"),
+	new listboxHeaderWidthObj("Company",true,""),
+	new listboxHeaderWidthObj("Receipient",true,""),
+	new listboxHeaderWidthObj("Our.Ref",true,""),
+	new listboxHeaderWidthObj("A.Bill",true,""),
+	new listboxHeaderWidthObj("Dt.Recv",true,""),
+	new listboxHeaderWidthObj("Employer",true,""),
+	new listboxHeaderWidthObj("Sent.By",true,""),
+};
+
+	sdate = kiboo.getDateFromDatebox(startdate);
+    edate = kiboo.getDateFromDatebox(enddate);
+    st = kiboo.replaceSingleQuotes(searhtxt_tb.getValue()).trim();
+	Listbox newlb = lbhand.makeVWListbox_Width(sendouts_holder, sohds, "sendouts_lb", 5);
+
+	sqlstm = "select origid,Mailing_Date,Receipient,Our_Reference,Airway_Bill,Date_Received,Employer,Sent,sendto_name from sendout " +
+	"where Mailing_Date between '" + sdate + " 00:00:00' and '" + edate + " 23:59:00' order by Mailing_Date desc";
+
+	trs = gpWFM_GetRows(sqlstm);
+	if(trs.size() == 0) return;
+	newlb.setRows(20);
+	newlb.setMold("paging");
+	newlb.addEventListener("onSelect", sendoutlciker);
+	ArrayList kabom = new ArrayList();
+	String[] fl = { "origid", "Mailing_Date", "sendto_name", "Receipient", "Our_Reference", "Airway_Bill", "Date_Received", "Employer", "Sent" };
+	for(d : trs)
+	{
+		popuListitems_Data(kabom, fl, d);
+		lbhand.insertListItems(newlb,kiboo.convertArrayListToStringArray(kabom),"false","");
+		kabom.clear();
+	}
+}
+
+void doFunc(Object iwhat)
+{
+	itype = iwhat.getId();
+	refresh = false;
+	sqlstm = msgtext = "";
+	todaydate =  kiboo.todayISODateTimeString();
+
+	if(itype.equals("newsendout_b"))
+	{
+		sqlstm = "insert into sendout (Mailing_Date,Receipient,sendto_name) values ('" + todaydate + "','NEW RECEIPIENT','UNKNOWN')";
+		refresh = true;
+	}
+
+	if(itype.equals("updsendout_b"))
+	{
+		if(glob_sel_sendout.equals("")) return;
+
+Object[] ob = { Mailing_Date, Airway_Bill, Receipient, Our_Reference, Date_Received, Received_By, Employer, CLA_Replacement_CLA_Reference,
+Quota_Allocated, With_Without_VISA, VISA_No_1, Visa_Headcount_1, VISA_No_2, Visa_Headcount_2, VISA_No_3, Visa_Headcount_3, VISA_No_4,
+Visa_Headcount_4, With_Without_Contract, Sent, Courier_Company, Courier_Company_Reference, Remarks, sendto_name, sendto_addr };
+
+		dth = getString_fromUI(ob);
+
+sqlstm = "update sendout set Mailing_Date='" + dth[0] + "', Airway_Bill='" + dth[1] + "', Receipient='" + dth[2] + "', Our_Reference='" + dth[3] + "'," +
+"Date_Received='" + dth[4] + "',Received_By='" + dth[5] + "',Employer='" + dth[6] + "',CLA_Replacement_CLA_Reference='" + dth[7] + "'," +
+"Quota_Allocated='" + dth[8] + "',With_Without_VISA='" + dth[9] + "',VISA_No_1='" + dth[10] + "',Visa_Headcount_1='" + dth[11] + "'," +
+"VISA_No_2='" + dth[12] + "',Visa_Headcount_2='" + dth[13] + "',VISA_No_3='" + dth[14] + "',Visa_Headcount_3='" + dth[15] + "'," +
+"VISA_No_4='" + dth[16] + "',Visa_Headcount_4='" + dth[17] + "',With_Without_Contract='" + dth[18] + "',Sent='" + dth[19] + "'," +
+"Courier_Company='" + dth[20] + "',Courier_Company_Reference='" + dth[21] + "',Remarks='" + dth[22] + "'," +
+"sendto_name='" + dth[23] + "', sendto_addr='" + dth[24] + "' where origid=" + glob_sel_sendout;
+
+		refresh = true;
+	}
+
+	if(itype.equals("delsendout_b"))
+	{
+		delcheck_pop.close();
+		if(glob_sel_sendout.equals("")) return;
+		ckp = pintb.getValue().trim();
+		if(ckp.equals(M_PIN))
+		{
+			sqlstm = "delete from sendout where origid=" + glob_sel_sendout;
+			refresh = true;
+			msgtext = "Record deleted..";
+			glob_sel_sendout = ""; // reset
+			workarea.setVisible(false);
+			blindTings_withTitle(blindme,seArea,blindtit);
+		}
+	}
+
+	if(!sqlstm.equals("")) gpWFM_execute(sqlstm);
+	if(refresh) listSendout();
+	if(!msgtext.equals("")) guihand.showMessageBox(msgtext);
+}
+
+class getcldbcliker implements org.zkoss.zk.ui.event.EventListener
+{
+	public void onEvent(Event event) throws UiException
+	{
+		selitem = event.getTarget();
+		oid = lbhand.getListcellItemLabel(selitem,0);
+		prn = selitem.getParent().getId();
+		r = fl = null;
+		String[] agentfl = { "Registered_Address", "Registered_Name", "Representative" };
+		String[] clientfl = { "Correspondence_Address_ch", "Client_Name_ch", "Client_PIC_ch", "Client_Abbr" };
+
+		if(prn.equals("agents_lb"))
+		{
+			r = getAgentRec(oid);
+			fl = agentfl;
+		}
+
+		if(prn.equals("clients_lb"))
+		{
+			r = getClientRec(oid);
+			fl = clientfl;
+		}
+
+		if(r != null)
+		{
+			sendto_addr.setValue( kiboo.checkNullString(r.get(fl[0])) );
+			sendto_name.setValue( kiboo.checkNullString(r.get(fl[1])) );
+			Receipient.setValue( kiboo.checkNullString(r.get(fl[2])) );
+			try { Employer.setValue( kiboo.checkNullString(r.get(fl[3])) ); } catch (Exception e) {}
+		}
+		
+		getClientAgent_pop.close();
+	}
+}
+getinfodbclker = new getcldbcliker();
+
+void showAgents(Object itb)
+{
+Object[] agnthds = 
+{
+	new listboxHeaderWidthObj("origid",false,""),
+	new listboxHeaderWidthObj("Code",true,""),
+	new listboxHeaderWidthObj("Agent",true,""),
+	new listboxHeaderWidthObj("Nat",true,""),
+	new listboxHeaderWidthObj("Rep",true,""),
+	new listboxHeaderWidthObj("Tel",true,""),
+};
+	st = kiboo.replaceSingleQuotes(itb.getValue().trim());
+	whstr = "";
+	if(!st.equals("")) whstr = "where (NATIONALITY like '%" + st + "%' or Code like '%" + st + "%' " +
+	"or Registered_Name like '%" + st + "%' or Representative like '%" + st + "') and (deleted=0 or deleted is null)";
+	else
+	whstr = "where deleted=0 or deleted is null";
+
+	Listbox newlb = lbhand.makeVWListbox_Width(gagents_holder, agnthds, "agents_lb", 5);
+	sqlstm = "select origid,NATIONALITY,Code,Registered_Name,Registered_Tel_No,Representative from foreignagent " + whstr + " order by Code";
+	trs = gpWFM_GetRows(sqlstm);
+	if(trs.size() == 0) return;
+	newlb.setMold("paging");
+	//newlb.addEventListener("onSelect", agentlciker);
+	ArrayList kabom = new ArrayList();
+	String[] fl = { "origid","NATIONALITY","Code","Registered_Name","Registered_Tel_No","Representative" };
+	for(d : trs)
+	{
+		popuListitems_Data(kabom, fl, d);
+		lbhand.insertListItems(newlb,kiboo.convertArrayListToStringArray(kabom),"false","");
+		kabom.clear();
+	}
+	lbhand.setDoubleClick_ListItems(newlb, getinfodbclker);
+}
+
+void showClients(Object itb)
+{
+Object[] clnthds = 
+{
+	new listboxHeaderWidthObj("origid",false,""),
+	new listboxHeaderWidthObj("Code",true,""),
+	new listboxHeaderWidthObj("Abbr",true,""),
+	new listboxHeaderWidthObj("Client",true,""),
+	new listboxHeaderWidthObj("Client CN",true,""),
+};
+	st = kiboo.replaceSingleQuotes(itb.getValue().trim());
+	whstr = "";
+	if(!st.equals("")) whstr = "where (Client_Name like '%" + st + "%' or Client_Name_ch like '%" + st + "%' " +
+	"or Client_Abbr like '%" + st + "%') and (deleted=0 or deleted is null)";
+	else
+	whstr = "where deleted=0 or deleted is null";
+
+	Listbox newlb = lbhand.makeVWListbox_Width(gclients_holder, clnthds, "clients_lb", 5);
+	sqlstm = "select origid,Client_Abbr,Code,Client_Name,Client_Name_ch from clients " + whstr + " order by Code";
+	trs = gpWFM_GetRows(sqlstm);
+	if(trs.size() == 0) return;
+	newlb.setMold("paging");
+	//newlb.addEventListener("onSelect", clientcliker);
+	ArrayList kabom = new ArrayList();
+	String[] fl = { "origid","Client_Abbr","Code","Client_Name","Client_Name_ch" }; 
+	for(d : trs)
+	{
+		popuListitems_Data(kabom, fl, d);
+		lbhand.insertListItems(newlb,kiboo.convertArrayListToStringArray(kabom),"false","");
+		kabom.clear();
+	}
+	lbhand.setDoubleClick_ListItems(newlb, getinfodbclker);
+}
+
+
+]]>
+</zscript>
+
+<style>
+.subhead0 { font-size:12px; font-weight:bold; color:#ffffff; text-shadow: 1px 1px #000000; }
+.subhead1 { font-size:16px; font-weight:bold; color:#ffffff; text-shadow: 1px 1px #000000; }
+.subhead2 { font-size:20px; font-weight:bold; color:#ffffff; text-shadow: 1px 1px #000000; }
+.shadowbox { -moz-box-shadow: 4px 5px 7px #000000; -webkit-box-shadow: 4px 5px 7px #000000; box-shadow: 4px 5px 7px #000000;padding:3px;margin:3px; }
+</style>
+
+<window id="${MY_ID}" width="1000px" title="${MYTITLE} ${MYVERSION}" mode="overlapped" border="normal" closable="true">
+
+<popup id="getClientAgent_pop">
+<div sclass="shadowbox" style="background:#a52a2a">
+
+<hbox>
+	<div>
+		<label style="color:#ffffff" value="Client" />
+		<textbox id="gclient_tb" />
+		<button label="Go" onClick="showClients(gclient_tb)" />
+	</div>
+	<div id="gclients_holder" width="480px" />
+</hbox>
+
+<separator height="3px" />
+
+<hbox>
+	<div>
+		<label style="color:#ffffff" value="Agent" />
+		<textbox id="gagent_tb" />
+		<button label="Go" onClick="showAgents(gagent_tb)" />
+	</div>
+	<div id="gagents_holder" width="480px" />
+</hbox>
+
+</div>
+</popup> <!-- ENDOF getClientAgent_pop -->
+
+<popup id="delcheck_pop">
+	<label value="PIN" />
+	<textbox id="pintb" type="password" />
+	<button id="delsendout_b" label="Go" onClick="doFunc(self)" />
+</popup> <!-- ENDOF delcheck_pop -->
+
+<div style="background:#2e3436;" >
+
+<hbox>
+	<hbox>
+		<button id="blindme" label="-" style="font-size:9px" onClick="blindTings_withTitle(self,seArea,blindtit)" />
+		<label id="blindtit" sclass="subhead1" value="Lister" visible="false" />
+	</hbox>
+
+	<div id="seArea" style="padding:2px" >
+		<hbox>
+		<grid width="600px">
+			<rows>
+				<row style="background:#2e3436;" >
+					<label value="Start" style="font-size:9px;color:#ffffff" />
+					<datebox id="startdate" format="yyyy-MM-dd" style="font-size:9px" onCreate="kiboo.setTodayDatebox(self)" />
+					<label value="End" style="font-size:9px;color:#ffffff" />
+					<datebox id="enddate" format="yyyy-MM-dd" style="font-size:9px" onCreate="kiboo.setTodayDatebox(self)" />
+					<button label="Load by date" style="font-size:9px;font-weight:bold" onClick="listSendout()" />
+				</row>
+				<row style="background:#2e3436;" spans="1,2,2" >
+					<label value="Search" style="font-size:9px;color:#ffffff" />
+					<textbox id="searhtxt_tb" width="99%" style="font-size:9px" />
+					<button label="Search" style="font-size:9px" onClick="listSendout()" />
+				</row>
+			</rows>
+		</grid>
+
+		<div>
+			<button id="newsendout_b" label="New send-out" style="font-weight:bold" onClick="doFunc(self)" />
+			<button label="Delete" style="font-weight:bold;color:#ff2222" onClick='pintb.setValue(""); delcheck_pop.open(self)' />
+		</div>
+		</hbox>
+
+		<separator height="2px" />
+		<div id="sendouts_holder" />
+
+	</div>
+</hbox>
+
+<separator height="3px" />
+
+<div id="workarea" visible="false">
+<grid>
+	<rows>
+		<row>
+			<label value="SO#" />
+			<label id="sonum_lbl" />
+		</row>
+		<row spans="1,2,1">
+			<label value="Send to" />
+			<textbox id="sendto_name" style="font-weight:bold" width="99%" />
+			<hbox>
+				<button label="Get client/agent" style="color:#1e90ff" onClick="getClientAgent_pop.open(sendto_name)" />
+			</hbox>
+		</row>
+		<row spans="1,3">
+			<label value="Address" />
+			<textbox id="sendto_addr" multiline="true" style="font-weight:bold" width="99%" height="60px" />
+		</row>
+	</rows>
+</grid>
+<div id="sendoutmeta_div" />
+
+<hbox>
+	<button id="updsendout_b" label="Update" style="font-weight:bold" onClick="doFunc(self)" />
+</hbox>
+
+</div> <!-- ENDOF workarea -->
+
+</div>
+
+<zscript>
+<![CDATA[
+
+snenoutform = dynamicForm(sendoutmeta_div, "sendoutmeta_grid", "7");
+
+]]>
+</zscript>
+
+</window>
+</zk>
+

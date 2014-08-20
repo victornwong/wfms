@@ -1,0 +1,429 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?page id="grnpotrakcmod"?>
+<zk>
+<zscript src="../rwglobal/rwglobaldefs.zs" />
+<zscript src="../rwglobal/fc6_CustomerSelector.zs" />
+<zscript src="../rwglobal/formMaker_v1.zs" />
+<zscript src="../rwglobal/rwsqlfuncs.zs" />
+<zscript src="../rwglobal/systemAudit.zs" />
+<zscript src="../rwglobal/uploadDocu_v1.zs" />
+<zscript src="../rwglobal/emailfuncs.zs" />
+<zscript src="../rwglobal/uploadedWorksheet_v1.zs" />
+<zscript>
+<![CDATA[
+MYTITLE = "Temp.GRN - PO/RMA/EOL/whatever Tracking";
+MYVERSION = "v0.1";
+MYPANEL = "grnopoitkakpan";
+/*
+Title		: GRN and PO/RMA/EOL/whatever tracking - integrade FC6 Temp.GRN -> RWMS.PO
+Written by	: Victor Wong
+Dated		: 05/03/2014
+
+Revisions:
+*/
+import java.util.*;
+import java.text.*;
+import org.victor.*;
+sechand = new SecurityFuncs();
+
+myincludeid = Executions.getCurrent().getParameter("myid");
+useraccessobj = sechand.getUserAccessObject();
+if(useraccessobj == null) Executions.sendRedirect(MAINLOGIN_PAGE);
+
+kiboo = new Generals();
+sqlhand = new SqlFuncs();
+lbhand = new ListboxHandler();
+guihand = new GuiFuncs();
+luhand = new LookupFuncs();
+dmshand = new DMSFuncs();
+
+lastlisttype = 0;
+grn_seli = null;
+glob_sel_grn = glob_sel_pono = "";
+
+void showGRNmeta(String iwhat)
+{
+	fillDocumentsList(documents_holder,GRN_PREFIX,iwhat);
+	showGRNitems(iwhat);
+	grnitms_lbl.setValue("GRN: " + iwhat);
+	poitems_div.setVisible(false);
+	workarea.setVisible(true);
+}
+
+Object[] grndhds = 
+{
+	new listboxHeaderWidthObj("GRN",true,"70px"),
+	new listboxHeaderWidthObj("Dated",true,"70px"),
+	new listboxHeaderWidthObj("Vendor/Customer",true,""),
+	new listboxHeaderWidthObj("Reference",true,""),
+	new listboxHeaderWidthObj("RecvBy",true,""),
+	new listboxHeaderWidthObj("Our.PO",true,""),
+	new listboxHeaderWidthObj("Qty",true,""),
+	new listboxHeaderWidthObj("Ship.Code",true,""),
+	new listboxHeaderWidthObj("Remarks",true,""),
+};
+i_opo = 5;
+
+class grnclike implements org.zkoss.zk.ui.event.EventListener
+{
+	public void onEvent(Event event) throws UiException
+	{
+		grn_seli = event.getReference();
+		glob_sel_grn = lbhand.getListcellItemLabel(grn_seli,0);
+		glob_sel_pono = lbhand.getListcellItemLabel(grn_seli,i_opo);
+		showGRNmeta(glob_sel_grn);
+	}
+}
+grnclikor = new grnclike();
+
+// itype: 1=all by date, 2=by date got 'PO'
+void listGRN(int itype)
+{
+	lastlisttype = itype;
+	sdate = kiboo.getDateFromDatebox(startdate);
+    edate = kiboo.getDateFromDatebox(enddate);
+    st = kiboo.replaceSingleQuotes(searhtxt_tb.getValue()).trim();
+	Listbox newlb = lbhand.makeVWListbox_Width(grn_holder, grndhds, "grns_lb", 22);
+
+	whstr = "";
+	switch(itype)
+	{
+		case 2:
+			whstr = " and tg.ponoyh like 'PO%' ";
+			break;
+		case 3:
+			whstr = " and (d.voucherno like '%" + st + "%' or ac.name like '%" + st + "%' or tg.vendorrefyh like '%" + st + "%' " +
+			"or tg.receivedbyyh like '%" + st + "%' or tg.ponoyh like '%" + st + "%' or tg.shipmentcodeyh like '%" + st + "%' " +
+			"or tg.grnremarksyh like '%" + st + "%') ";
+			break;
+		case 4:
+			whstr = " and (tg.vendorrefyh like '%RMA%' or tg.ponoyh like '%RMA%' or tg.shipmentcodeyh like '%RMA%' or " +
+			"tg.grnremarksyh like '%RMA%') ";
+			break;
+		case 5:
+			whstr = " and (tg.vendorrefyh like '%EOL%' or tg.ponoyh like '%EOL%' or tg.shipmentcodeyh like '%EOL%' or " +
+			"tg.grnremarksyh like '%EOL%') ";
+			break;
+		case 6:
+			whstr = " and (tg.vendorrefyh like '%GCN%' or tg.ponoyh like '%GCN%' or " +
+			"tg.shipmentcodeyh like '%GCN%' or tg.grnremarksyh like '%GCN%') ";
+			break;
+	}
+
+	sqlstm = "select convert(datetime, dbo.ConvertFocusDate(d.date_), 112) as vdate, " +
+	"d.voucherno, ac.name as vendor, tg.vendorrefyh, tg.receivedbyyh, tg.ponoyh, tg.shipmentcodeyh, tg.grnremarksyh, " +
+	"sum(iy.qty2) as unitc " +
+	"from data d " +
+	"left join u002c tg on tg.extraid = d.extraheaderoff " +
+	"left join mr000 ac on ac.masterid = d.bookno " +
+	"left join mr001 i on i.masterid = d.productcode " +
+	"left join mr008 ro on ro.masterid = d.tags6 " +
+	"left join header h on h.headerid=d.headeroff " +
+	"left join indta iy on iy.salesid = d.salesoff " +
+	"where d.vouchertype=1281 " +
+	"and convert(datetime, dbo.ConvertFocusDate(d.date_), 112) between '" + sdate + "' and '" + edate + "' " +
+	whstr +
+	"group by d.voucherno, d.date_, d.voucherno, d.bookno, ac.name, " +
+	"tg.vendorrefyh, tg.receivedbyyh, tg.ponoyh, tg.shipmentcodeyh, tg.grnremarksyh " +
+	"order by d.voucherno ";
+
+	r = sqlhand.rws_gpSqlGetRows(sqlstm);
+	if(r.size() == 0) return;
+	newlb.setMold("paging");
+	newlb.addEventListener("onSelect", grnclikor);
+	ArrayList kabom = new ArrayList();
+
+	String[] fl = { "voucherno", "vdate", "vendor", "vendorrefyh", "receivedbyyh", "ponoyh", "unitc", "shipmentcodeyh",
+	"grnremarksyh" };
+
+	for(d : r)
+	{
+		for(i=0; i<fl.length; i++)
+		{
+			kk = d.get(fl[i]);
+			if(kk == null) kk = "";
+			else
+			if(kk instanceof Date) kk = dtf2.format(kk);
+			else
+			if(kk instanceof Integer) kk = nf0.format(kk);
+
+			kabom.add(kk);
+		}
+		lbhand.insertListItems(newlb,kiboo.convertArrayListToStringArray(kabom),"false","");
+		kabom.clear();
+	}
+	poitems_div.setVisible(false);
+	tgrn_div.setVisible(true);
+}
+
+Object[] grnihds =
+{
+	new listboxHeaderWidthObj("No.",true,"40px"),
+	new listboxHeaderWidthObj("Product",true,""),
+	new listboxHeaderWidthObj("Qty",true,"40px"),
+};
+
+void showGRNitems(String iwhat)
+{
+	Listbox newlb = lbhand.makeVWListbox_Width(grnitems_holder, grnihds, "grnitems_lb", 3);
+	sqlstm = "select i.name as productname, iy.qty2 from data d " +
+	"left join mr001 i on i.masterid = d.productcode " +
+	"left join indta iy on iy.salesid = d.salesoff " +
+	"where d.vouchertype=1281 and d.productcode<>0 " +
+	"and d.voucherno='" + iwhat + "'";
+
+	r = sqlhand.rws_gpSqlGetRows(sqlstm);
+	if(r.size() == 0) return;
+	newlb.setMold("paging");
+	newlb.setRows(22);
+	//newlb.addEventListener("onSelect", grnclikor);
+	lnc = 1;
+	ArrayList kabom = new ArrayList();
+	for(d : r)
+	{
+		kabom.add(lnc.toString() + "." );
+		kabom.add( kiboo.checkNullString(d.get("productname")) ); 
+		kabom.add( nf0.format(d.get("qty2")) );
+		lbhand.insertListItems(newlb,kiboo.convertArrayListToStringArray(kabom),"false","");
+		lnc++;
+		kabom.clear();
+	}
+}
+
+void checkPOdets(String iwhat)
+{
+Object[] poitmhds =
+{
+	new listboxHeaderWidthObj("No.",true,"40px"),
+	new listboxHeaderWidthObj("Product",true,""),
+	new listboxHeaderWidthObj("Qty",true,"40px"),
+};
+
+	pon = kiboo.replaceSingleQuotes( iwhat.trim() );
+	if(pon.equals("")) return;
+	pon = pon.toUpperCase().replaceAll("PO","").trim();
+	cpono_tb.setValue(pon);
+	pr = getPR_rec(pon);
+	if(pr == null) { guihand.showMessageBox("Sorry.. cannot retrieve PR/PO record"); return; }
+
+	Listbox newlb = lbhand.makeVWListbox_Width(c_po_items_holder, poitmhds, "poitems_lb", 3);
+	ktg = sqlhand.clobToString(pr.get("pr_items"));
+	if(!ktg.equals(""))
+	{
+		newlb.setRows(22);
+		itms = sqlhand.clobToString(pr.get("pr_items")).split("~");
+		iqty = sqlhand.clobToString(pr.get("pr_qty")).split("~");
+		ArrayList kabom = new ArrayList();
+
+		for(i=0; i<itms.length; i++)
+		{
+			kabom.add( (i+1).toString() + "." );
+			try { k = itms[i]; } catch (Exception e) { k = ""; }
+			kabom.add(k);
+			try { k = iqty[i]; } catch (Exception e) { k = ""; }
+			kabom.add(k);
+			lbhand.insertListItems(newlb,kiboo.convertArrayListToStringArray(kabom),"false","");
+			kabom.clear();
+		}
+	}
+	c_supplier_name.setValue("Supplier: " + kiboo.checkNullString(pr.get("supplier_name")) );
+	c_prno.setValue(pr.get("origid").toString() );
+	p_sup_etd.setValue( dtf2.format(pr.get("sup_etd")) );
+	p_sup_actual_deldate.setValue( pr.get("sup_actual_deldate") );
+	lbhand.matchListboxItems(p_del_status, kiboo.checkNullString(pr.get("del_status")) );
+
+	poitems_div.setVisible(true);
+}
+
+void checkpopPOitems()
+{
+	if(c_po_items_holder.getFellowIfAny("poitems_lb") != null) poitems_lb.setParent(null);
+	poitems_div.setVisible(false);
+	checkPOdets(glob_sel_pono);
+	//cpono_tb.setValue(glob_sel_pono);
+	//chkpo_pop.open(grn_seli);
+}
+
+void updPOdelivery()
+{
+	prn = c_prno.getValue().trim();
+	if(prn.equals("")) return;
+	acd = kiboo.getDateFromDatebox(p_sup_actual_deldate);
+	dst = p_del_status.getSelectedItem().getLabel();
+
+	sqlstm = "update purchaserequisition set sup_actual_deldate='" + acd + "'," +
+	"del_status='" + dst + "', temp_grn='" + glob_sel_grn + "' where origid=" + prn;
+
+	sqlhand.gpSqlExecuter(sqlstm);
+	lgstr = "Upd: delivery-date=" + acd + ", del-stat=" + dst + ", t.grn=" + glob_sel_grn;
+	add_RWAuditLog(PR_PREFIX + prn, "", lgstr, useraccessobj.username);
+	guihand.showMessageBox("PR/PO delivery status updated..");
+}
+
+]]>
+</zscript>
+
+<popup id="chkpo_pop">
+<div style="background:#909d2a; -moz-box-shadow: 4px 5px 7px #000000; -webkit-box-shadow: 4px 5px 7px #000000;
+box-shadow: 4px 5px 7px #000000;padding:3px;margin:3px" width="300px">
+	<hbox>
+		<label value="PO No." style="color:#ffffff" />
+		<textbox id="cpono_tb" />
+		<button label="Check" onClick="checkPOdets()" />
+	</hbox>
+</div>
+</popup>
+
+<!-- update file description popup -->
+<popup id="updatefiledesc_popup">
+<groupbox width="400px">
+	<caption id="updatefiledesc_label" />
+	<label value="Description" style="font-size:9px" />
+	<textbox id="update_file_description" multiline="true" height="70px" width="99%" style="font-size:9px" />
+	<separator height="3px" />
+	<hbox>
+		<button label="Update" style="font-size:9px" onClick="updateFileDescription(documents_holder,EQUIPGRN_PREFIX,glob_sel_grn)" />
+		<button label="Close" style="font-size:9px" onClick="updatefiledesc_popup.close()" />
+	</hbox>
+</groupbox>
+</popup>
+
+<!-- upload a file popup -->
+<popup id="uploadfile_popup">
+<groupbox>
+<caption label="Upload a file" />
+	<grid>
+		<rows>
+			<row>
+				<label value="Filename" style="font-size:9px" />
+				<textbox id="fileupl_file_title" width="200px" style="font-size:9px" />
+			</row>
+			<row>
+				<label value="Description" style="font-size:9px" />
+				<textbox id="fileupl_file_description" multiline="true" height="60px" width="200px" style="font-size:9px" />
+			</row>
+		</rows>
+	</grid>
+</groupbox>
+<separator height="3px" />
+<hbox>
+	<button label="Select file" onClick="uploadFile(documents_holder,GRN_PREFIX,glob_sel_grn)" style="font-size:9px" />
+	<button label="Close" onClick="uploadfile_popup.close()"  style="font-size:9px" />
+</hbox>
+</popup>
+
+<style>
+.subhead { font-size:16px; color:#ffffff; font-weight:bold; text-shadow: 1px 1px #000000; }
+.subhead2 { font-size:24px; color:#ffffff; font-weight:bold; text-shadow: 1px 1px #000000; }
+</style>
+
+<div width="1200px">
+<panel id="${MYPANEL}" title="${MYTITLE} ${MYVERSION}" border="normal" collapsible="true" closable="true" >
+<panelchildren>
+
+<div style="background:#2e3436; -moz-box-shadow: 4px 5px 7px #000000; -webkit-box-shadow: 4px 5px 7px #000000;
+box-shadow: 4px 5px 7px #000000;padding:3px;margin:3px">
+
+	<grid width="800px">
+		<rows>
+			<row style="background:#2e3436;" >
+				<label value="Start" style="font-size:9px;color:#ffffff" />
+				<datebox id="startdate" format="yyyy-MM-dd" style="font-size:9px" onCreate="kiboo.setTodayDatebox(self)" />
+				<label value="End" style="font-size:9px;color:#ffffff" />
+				<datebox id="enddate" format="yyyy-MM-dd" style="font-size:9px" onCreate="kiboo.setTodayDatebox(self)" />
+				<button label="Load all by date" style="font-size:9px;font-weight:bold" onClick="listGRN(1)" />
+				<button label="by PO" style="font-size:9px;font-weight:bold" onClick="listGRN(2)" />
+				<button label="by RMA" style="font-size:9px;font-weight:bold" onClick="listGRN(4)" />
+				<button label="by EOL" style="font-size:9px;font-weight:bold" onClick="listGRN(5)" />
+				<button label="by GCN" style="font-size:9px;font-weight:bold" onClick="listGRN(6)" />
+			</row>
+			<row style="background:#2e3436;" spans="1,1,1,2" >
+				<label value="Search" style="font-size:9px;color:#ffffff" />
+				<textbox id="searhtxt_tb" width="99%" style="font-size:9px" />
+				<button label="Search" style="font-size:9px" onClick="listGRN(3)" />
+			</row>
+		</rows>
+	</grid>
+	<separator height="2px" />
+
+	<div  id="tgrn_div" visible="false" >
+		<hbox>
+			<label sclass="subhead" value="Temp.GRN" />
+			<separator width="20px" />
+			<button label="Check PO" style="color:#1b528c;font-weight:bold" onClick="checkpopPOitems()" />
+		</hbox>
+		<separator height="2px" />
+		<div id="grn_holder" />
+	</div>
+</div>
+<separator height="2px" />
+
+<hbox id="workarea" visible="false">
+	<vbox>
+		<div style="background:#2e3436; -moz-box-shadow: 4px 5px 7px #000000; -webkit-box-shadow: 4px 5px 7px #000000;
+		box-shadow: 4px 5px 7px #000000;padding:3px;margin:3px" width="550px" >
+			<label id="grnitms_lbl" sclass="subhead" />
+			<separator height="2px" />
+			<div id="grnitems_holder" />
+		</div>
+
+		<div style="background:#2e3436; -moz-box-shadow: 4px 5px 7px #000000; -webkit-box-shadow: 4px 5px 7px #000000;
+		box-shadow: 4px 5px 7px #000000;padding:3px;margin:3px" width="550px" >
+			<label sclass="subhead" value="ATTACHMENT / DOCUMENTS" />
+			<label style="font-size:9px;color:#ffffff" value="(Supplier invoice, DO and etc)" />
+			<separator height="3px" />
+			<hbox>
+				<button id="uploaddoc_btn" label="Upload file" style="font-size:9px"
+					onClick="showUploadPopup(GRN_PREFIX,glob_sel_grn)" />
+				<button id="viewdoc_btn" label="View file" style="font-size:9px" onClick="viewFile()" />
+				<button id="editdoc_btn" label="Update" style="font-size:9px" onClick="updatefiledesc_popup.open(self)" />
+				<button id="deletedoc_btn" label="Delete" style="font-size:9px"
+					onClick="deleteFile(documents_holder,GRN_PREFIX,glob_sel_grn)" />
+			</hbox>
+			<separator height="3px" />
+			<div id="documents_holder" />
+		</div>
+	</vbox>
+
+	<vbox>
+		<div style="background:#2e3436; -moz-box-shadow: 4px 5px 7px #000000; -webkit-box-shadow: 4px 5px 7px #000000;
+		box-shadow: 4px 5px 7px #000000;padding:3px;margin:3px" id="poitems_div" visible="false" >
+			<label value="PR/PO No:" style="color:#ffffff;font-weight:bold" />
+			<label id="c_prno" style="color:#ffffff;font-weight:bold" />
+			<separator height="2px" />
+			<label id="c_supplier_name" style="color:#ffffff;font-weight:bold" />
+			<separator height="2px" />
+			<grid>
+				<rows>
+					<row>
+						<label value="Supplier ETD" />
+						<label id="p_sup_etd" style="font-weight:bold" />
+						<label value="Actual delivery" />
+						<datebox id="p_sup_actual_deldate" format="yyyy-MM-dd" onCreate="kiboo.setTodayDatebox(self)" />
+					</row>
+					<row>
+						<label value="Delivery status" />
+						<listbox id="p_del_status" mold="select" />
+						<button label="Update PR/PO delivery status" style="font-size:9px;font-weight:bold" onClick="updPOdelivery()" />
+					</row>
+				</rows>
+			</grid>
+			<separator height="2px" />
+			<div id="c_po_items_holder" />
+		</div>
+	</vbox>
+	
+</hbox>
+
+<zscript>
+<![CDATA[
+
+luhand.populateListbox_ByLookup(p_del_status,"DO_STATUS",2);
+
+]]>
+</zscript>
+</panelchildren>
+</panel>
+</div>
+</zk>
+

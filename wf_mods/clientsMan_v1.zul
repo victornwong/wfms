@@ -1,0 +1,289 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?page id="clientman_mod"?>
+<zk>
+<zscript src="../wf_global/wfglobaldefs.zs" />
+<zscript src="../wf_global/wfsqlfuncs.zs" />
+<zscript src="../wf_global/formMaker_v1.zs" />
+<zscript>
+<![CDATA[
+MYTITLE = "Clients Management";
+MYVERSION = "v0.1";
+MY_ID = "clientmanp";
+/*
+Written by	: Victor Wong
+Dated		: 14/03/2014
+NOTES:
+*/
+/*
+import org.victor.*;
+sechand = new SecurityFuncs();
+myincludeid = Executions.getCurrent().getParameter("myid");
+useraccessobj = sechand.getUserAccessObject();
+if(useraccessobj == null) Executions.sendRedirect(MAINLOGIN_PAGE);
+*/
+kiboo = new Generals();
+sqlhand = new SqlFuncs();
+lbhand = new ListboxHandler();
+guihand = new GuiFuncs();
+luhand = new LookupFuncs();
+
+M_PIN = "1010";
+glob_sel_client = "";
+
+void showClientMeta(String iwhat)
+{
+String[] clients_fl = { "Client_Abbr", "Code", "Industry_ch", "Industry", "Position_ch", "Position", "Nationality",
+	"Quota", "Business_Unit", "Manager_In_Charged", "Sale_In_Charged", "Admin_Rep", "Client_Name_ch", "Client_Name",
+	"Client_Tax_Reference", "Client_Tel", "Client_Fax", "Contact_Person", "Email", "Correspondence_Address_ch",
+	"Corresponence_Address", "Zip_Code", "Factory_Tel", "Factory_Fax", "Employment_Add_1_ch", "Employment_Add_1",
+	"Employment_Add_2_ch", "Employment_Add_2", "Employment_Add_3_ch", "Employment_Add_3", "PRINCIPAL_ACTIVITY_1",
+	"PRINCIPAL_ACTIVITY_2", "PRINCIPAL_ACTIVITY_3", "PRINCIPAL_ACTIVITY_4", "Client_PIC_ch", "Client_PIC", "Clinet_PIC_ID",
+	"PIC_ID_Issued_Date", "Sex_ch", "Sex", "DOB", "Region_ch", "Place_of_Birth_ch", "Place_of_Birth", "Occupation_ch",
+	"Occupation", "Residential_Address_ch", "Residential_Address", "Doc_Required_by_Client_1", "Doc_Required_by_Client_2",
+	"Doc_Required_by_Client_3", "Doc_Required_by_Client_4", "Doc_Required_by_Client_5", "Doc_Required_by_Client_6",
+	"Doc_Required_by_Client_7", "Doc_Required_by_Client_8", "Doc_Required_by_Client_9", "Job_Title_ch",
+	"Job_Title", "Job_Description_1_ch", "Job_Description_1", "Job_Description_2_ch", "Job_Description_2",
+	"Job_Description_3_ch", "Job_Description_3", "Remarks" };
+
+Object[] clients_ob = { Client_Abbr, Code, Industry_ch, Industry, Position_ch, Position, Nationality,
+	Quota, Business_Unit, Manager_In_Charged, Sale_In_Charged, Admin_Rep, Client_Name_ch, Client_Name,
+	Client_Tax_Reference, Client_Tel, Client_Fax, Contact_Person, Email, Correspondence_Address_ch,
+	Corresponence_Address, Zip_Code, Factory_Tel, Factory_Fax, Employment_Add_1_ch, Employment_Add_1,
+	Employment_Add_2_ch, Employment_Add_2, Employment_Add_3_ch, Employment_Add_3, PRINCIPAL_ACTIVITY_1,
+	PRINCIPAL_ACTIVITY_2, PRINCIPAL_ACTIVITY_3, PRINCIPAL_ACTIVITY_4, Client_PIC_ch, Client_PIC, Clinet_PIC_ID,
+	PIC_ID_Issued_Date, Sex_ch, Sex, DOB, Region_ch, Place_of_Birth_ch, Place_of_Birth, Occupation_ch,
+	Occupation, Residential_Address_ch, Residential_Address, Doc_Required_by_Client_1, Doc_Required_by_Client_2,
+	Doc_Required_by_Client_3, Doc_Required_by_Client_4, Doc_Required_by_Client_5, Doc_Required_by_Client_6,
+	Doc_Required_by_Client_7, Doc_Required_by_Client_8, Doc_Required_by_Client_9, Job_Title_ch,
+	Job_Title, Job_Description_1_ch, Job_Description_1, Job_Description_2_ch, Job_Description_2,
+	Job_Description_3_ch, Job_Description_3, Remarks };
+
+	r = getClientRec(iwhat);
+	if(r == null) return;
+	populateUI_Data(clients_ob,clients_fl,r);
+	workarea.setVisible(true);
+	blindTings_withTitle(blindme,seArea,blindtit);
+}
+
+class clntlciker implements org.zkoss.zk.ui.event.EventListener
+{
+	public void onEvent(Event event) throws UiException
+	{
+		selitm = event.getReference();
+		glob_sel_client = lbhand.getListcellItemLabel(selitm,0);
+		showClientMeta(glob_sel_client);
+	}
+}
+clientcliker = new clntlciker();
+
+void showClients()
+{
+Object[] clnthds = 
+{
+	new listboxHeaderWidthObj("origid",false,""),
+	new listboxHeaderWidthObj("Code",true,""),
+	new listboxHeaderWidthObj("Abbr",true,""),
+	new listboxHeaderWidthObj("Client",true,""),
+	new listboxHeaderWidthObj("Client CN",true,""),
+};
+	st = kiboo.replaceSingleQuotes(searchtb.getValue().trim());
+	whstr = "";
+	if(!st.equals("")) whstr = "where (Client_Name like '%" + st + "%' or Client_Name_ch like '%" + st + "%' " +
+	"or Client_Abbr like '%" + st + "%') and (deleted=0 or deleted is null)";
+	else
+	whstr = "where deleted=0 or deleted is null";
+
+	Listbox newlb = lbhand.makeVWListbox_Width(clientsholder, clnthds, "clients_lb", 22);
+	sqlstm = "select origid,Client_Abbr,Code,Client_Name,Client_Name_ch from clients " + whstr + " order by Code";
+	trs = gpWFM_GetRows(sqlstm);
+	if(trs.size() == 0) return;
+	newlb.setMold("paging");
+	newlb.addEventListener("onSelect", clientcliker);
+	ArrayList kabom = new ArrayList();
+	String[] fl = { "origid","Client_Abbr","Code","Client_Name","Client_Name_ch" }; 
+	for(d : trs)
+	{
+		popuListitems_Data(kabom, fl, d);
+		lbhand.insertListItems(newlb,kiboo.convertArrayListToStringArray(kabom),"false","");
+		kabom.clear();
+	}
+}
+
+void doFunc(Object iwhat)
+{
+	itype = iwhat.getId();
+	refresh = false;
+	sqlstm = msgtext = "";
+
+	if(itype.equals("newclient_b"))
+	{
+		sqlstm = "insert into clients (Client_Abbr, Code, Client_Name) values ('NEW ABBR','','NEW CLIENT')";
+		refresh = true;
+	}
+
+	if(itype.equals("updclnt_b"))
+	{
+		if(glob_sel_client.equals("")) return;
+
+Object[] clients_ob = { Client_Abbr, Code, Industry_ch, Industry, Position_ch, Position, Nationality,
+	Quota, Business_Unit, Manager_In_Charged, Sale_In_Charged, Admin_Rep, Client_Name_ch, Client_Name,
+	Client_Tax_Reference, Client_Tel, Client_Fax, Contact_Person, Email, Correspondence_Address_ch,
+	Corresponence_Address, Zip_Code, Factory_Tel, Factory_Fax, Employment_Add_1_ch, Employment_Add_1,
+	Employment_Add_2_ch, Employment_Add_2, Employment_Add_3_ch, Employment_Add_3, PRINCIPAL_ACTIVITY_1,
+	PRINCIPAL_ACTIVITY_2, PRINCIPAL_ACTIVITY_3, PRINCIPAL_ACTIVITY_4, Client_PIC_ch, Client_PIC, Clinet_PIC_ID,
+	PIC_ID_Issued_Date, Sex_ch, Sex, DOB, Region_ch, Place_of_Birth_ch, Place_of_Birth, Occupation_ch,
+	Occupation, Residential_Address_ch, Residential_Address, Doc_Required_by_Client_1, Doc_Required_by_Client_2,
+	Doc_Required_by_Client_3, Doc_Required_by_Client_4, Doc_Required_by_Client_5, Doc_Required_by_Client_6,
+	Doc_Required_by_Client_7, Doc_Required_by_Client_8, Doc_Required_by_Client_9, Job_Title_ch,
+	Job_Title, Job_Description_1_ch, Job_Description_1, Job_Description_2_ch, Job_Description_2,
+	Job_Description_3_ch, Job_Description_3, Remarks };
+
+	dt = getString_fromUI(clients_ob);
+	
+sqlstm = "update clients set Client_Abbr='" + dt[0] + "', Code='" + dt[1] + "', Industry_ch='" + dt[2] + "'," +
+"Industry='" + dt[3] + "', Position_ch='" + dt[4] + "', Position='" + dt[5] + "', Nationality='" + dt[6] + "'," +
+"Quota='" + dt[7] + "', Business_Unit='" + dt[8] + "', Manager_In_Charged='" + dt[9] + "'," +
+"Sale_In_Charged='" + dt[10] + "', Admin_Rep='" + dt[11] + "', Client_Name_ch='" + dt[12] + "', Client_Name='" + dt[13] + "'," +
+"Client_Tax_Reference='" + dt[14] + "', Client_Tel='" + dt[15] + "', Client_Fax='" + dt[16] + "'," + 
+"Contact_Person='" + dt[17] + "', Email='" + dt[18] + "', Correspondence_Address_ch='" + dt[19] + "'," +
+"Corresponence_Address='" + dt[20] + "', Zip_Code='" + dt[21] + "', Factory_Tel='" + dt[22] + "'," +
+"Factory_Fax='" + dt[23] + "', Employment_Add_1_ch='" + dt[24] + "', Employment_Add_1='" + dt[25] + "'," +
+"Employment_Add_2_ch='" + dt[26] + "', Employment_Add_2='" + dt[27] + "', Employment_Add_3_ch='" + dt[28] + "'," +
+"Employment_Add_3='" + dt[29] + "', PRINCIPAL_ACTIVITY_1='" + dt[30] + "'," +
+"PRINCIPAL_ACTIVITY_2='" + dt[31] + "', PRINCIPAL_ACTIVITY_3='" + dt[32] + "', PRINCIPAL_ACTIVITY_4='" + dt[33] + "'," +
+"Client_PIC_ch='" + dt[34] + "', Client_PIC='" + dt[35] + "', Clinet_PIC_ID='" + dt[36] + "'," +
+"PIC_ID_Issued_Date='" + dt[37] + "', Sex_ch='" + dt[38] + "', Sex='" + dt[39] + "', DOB='" + dt[40] + "'," +
+"Region_ch='" + dt[41] + "', Place_of_Birth_ch='" + dt[42] + "', Place_of_Birth='" + dt[43] + "', Occupation_ch='" + dt[44] + "'," +
+"Occupation='" + dt[45] + "', Residential_Address_ch='" + dt[46] + "', Residential_Address='" + dt[47] + "'," +
+"Doc_Required_by_Client_1='" + dt[48] + "', Doc_Required_by_Client_2='" + dt[49] + "'," +
+"Doc_Required_by_Client_3='" + dt[50] + "', Doc_Required_by_Client_4='" + dt[51] + "'," +
+"Doc_Required_by_Client_5='" + dt[52] + "', Doc_Required_by_Client_6='" + dt[53] + "'," +
+"Doc_Required_by_Client_7='" + dt[54] + "', Doc_Required_by_Client_8='" + dt[55] + "'," +
+"Doc_Required_by_Client_9='" + dt[56] + "', Job_Title_ch='" + dt[57] + "'," +
+"Job_Title='" + dt[58] + "', Job_Description_1_ch='" + dt[59] + "', Job_Description_1='" + dt[60] + "'," +
+"Job_Description_2_ch='" + dt[61] + "', Job_Description_2='" + dt[62] + "'," +
+"Job_Description_3_ch='" + dt[63] + "', Job_Description_3='" + dt[64] + "', Remarks='" + dt[60] + "' " +
+"where origid=" + glob_sel_client;
+
+	refresh = true;
+
+	}
+
+	if(itype.equals("delclient_b"))
+	{
+		delcheck_pop.close();
+		if(glob_sel_client.equals("")) return;
+		ckp = pintb.getValue().trim();
+		if(ckp.equals(M_PIN))
+		{
+			sqlstm = "update clients set deleted=1 where origid=" + glob_sel_client;
+			refresh = true;
+			msgtext = "Record deleted..";
+			glob_sel_agent = ""; // reset
+			workarea.setVisible(false);
+			blindTings_withTitle(blindme,seArea,blindtit);
+		}
+	}
+
+	
+	if(!sqlstm.equals("")) gpWFM_execute(sqlstm);
+	if(refresh) showClients();
+	if(!msgtext.equals("")) guihand.showMessageBox(msgtext);
+}
+
+]]>
+</zscript>
+
+<style>
+.subhead0 { font-size:12px; font-weight:bold; color:#ffffff; text-shadow: 1px 1px #000000; }
+.subhead1 { font-size:16px; font-weight:bold; color:#ffffff; text-shadow: 1px 1px #000000; }
+.subhead2 { font-size:20px; font-weight:bold; color:#ffffff; text-shadow: 1px 1px #000000; }
+.shadowbox { -moz-box-shadow: 4px 5px 7px #000000; -webkit-box-shadow: 4px 5px 7px #000000; box-shadow: 4px 5px 7px #000000;padding:3px;margin:3px; }
+</style>
+
+<window id="${MY_ID}" title="${MYTITLE} ${MYVERSION}" width="1000px" mode="overlapped" border="normal" closable="true">
+
+<popup id="delcheck_pop">
+	<label value="PIN" />
+	<textbox id="pintb" type="password" />
+	<button id="delclient_b" label="Go" onClick="doFunc(self)" />
+</popup>
+
+<div style="background:#083e58">
+
+<hbox>
+	<hbox>
+		<button id="blindme" label="-" style="font-size:9px" onClick="blindTings_withTitle(blindme,seArea,blindtit)" />
+		<label id="blindtit" sclass="subhead1" value="Lister" visible="false" />
+	</hbox>
+
+	<div id="seArea" style="padding:2px">
+		<hbox>
+			<label style="color:#ffffff" value="Search" />
+			<textbox id="searchtb" />
+			<button label="Go" onClick="showClients()" />
+			<separator width="30px" />
+			<button id="newclient_b" label="New client" style="font-weight:bold" onClick="doFunc(self)" />
+			<button label="Delete" style="font-weight:bold;color:#ff2222" onClick='pintb.setValue(""); delcheck_pop.open(self)' />
+		</hbox>
+		<separator height="2px" />
+		<div id="clientsholder" />
+	</div>
+</hbox>
+
+<separator height="2px" />
+<div id="workarea" visible="false">
+<tabbox> <!-- form area -->
+	<tabs>
+		<tab id="tab0" label="Client info" />
+		<tab id="tab1" label="Employment" />
+		<tab id="tab2" label="PIC" />
+		<tab id="tab3" label="Requirements" />
+	</tabs>
+	<tabpanels>
+	<tabpanel> <!-- Client info -->
+		<div id="clntmeta_div" />
+	</tabpanel> <!-- ENDOF Client info -->
+	
+	<tabpanel> <!-- Employment info -->
+		<div id="clntemp_div" />
+	</tabpanel> <!-- ENDOF Employment info -->
+	
+	<tabpanel> <!-- PIC -->
+		<div id="cltpic_div" />
+	<grid>
+		<rows>
+		</rows>
+	</grid>
+	</tabpanel> <!-- ENDOF PIC -->
+	
+	<tabpanel> <!-- Requirements -->
+		<div id="cltdocreq_div" />
+	</tabpanel> <!-- Requirements -->
+	</tabpanels>
+</tabbox>
+
+<hbox>
+	<button id="updclnt_b" label="Update" style="font-weight:bold" onClick="doFunc(self)" />
+</hbox>
+
+</div> <!-- ENDOF workarea -->
+
+</div>
+
+<zscript>
+<![CDATA[
+
+clientform = dynamicForm(clntmeta_div, "clientmeta_grid", "3");
+clntempform = dynamicForm(clntemp_div, "clntemp_grid", "4");
+clntpicform = dynamicForm(cltpic_div, "cltpic_grid", "5");
+clntdocform = dynamicForm(cltdocreq_div, "cltdocreq_grid", "6");
+
+showClients();
+
+]]>
+</zscript>
+
+</window>
+</zk>
+

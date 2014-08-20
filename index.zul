@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?page id="als_portal_login" ?>
+<?page title="WFMS"?>
+<zk xmlns:h="http://www.w3.org/1999/xhtml" xmlns:zk="http://www.zkoss.org/2005/zk">
+<zscript src="wf_global/wfglobaldefs.zs" />
+<zscript src="wf_global/wfsqlfuncs.zs" />
+<zscript>
+<![CDATA[
+MYTITLE = "WORKFORCE MANAGEMENT SYSTEM";
+MYVERSION = "v0.1";
+// <?link rel="shortcut icon" type="image/x-icon" href="/favicon.ico"?>
+/*
+121.121.87.250
+54.186.71.220
+vwdbinstance.cpefpa8ops87.ap-southeast-1.rds.amazonaws.com:3306
+*/
+
+setstuff = Executions.getCurrent().getParameter("stf");
+
+void domysql()
+{
+sqlstm = "select * from clients limit 1";
+recs = gpWFM_GetRows(sqlstm);
+alert(recs);
+}
+
+void dotestme()
+{
+	String dbstring = "jdbc:mysql://vwdbinstance.cpefpa8ops87.ap-southeast-1.rds.amazonaws.com:3306/wfmdb?useUnicode=true&characterEncoding=UTF-8";
+	try { alert(Sql.newInstance(dbstring, "vwong2000", "dell2000", "com.mysql.jdbc.Driver")); } catch (Exception e) {}
+}
+
+void runMod(Object iwhat)
+{
+	itype = iwhat.getId();
+	fnm = "";
+
+	if(itype.equals("clientman_m")) fnm = "wf_mods/clientsMan_v1.zul";
+	if(itype.equals("agentsman_m")) fnm = "wf_mods/agentsMan_v1.zul";
+	if(itype.equals("sendout_m")) fnm = "wf_mods/sendoutTracker_v1.zul";
+	if(itype.equals("wfman_m")) fnm = "wfm/masterVisaHand_v1.zul";
+	if(itype.equals("formaker_m")) fnm = "wfm/xmlFormaker_v2.zul";
+	if(itype.equals("laborchrg_m")) fnm = "wfm/laborcharges_v1.zul";
+	if(itype.equals("lookup_m")) fnm = "wfm/staticlookupman.zul?lu=112&wt=General%20Lookups";
+
+	if(!fnm.equals(""))
+	{
+		kv = new Include();
+		kv.setParent(winsholder);
+		kv.setSrc(fnm);
+	}
+}
+
+]]>
+</zscript>
+
+<style>
+.subhead0 { font-size:12px; font-weight:bold; color:#ffffff; text-shadow: 1px 1px #000000; }
+.subhead1 { font-size:16px; font-weight:bold; color:#ffffff; text-shadow: 1px 1px #000000; }
+.subhead2 { font-size:20px; font-weight:bold; color:#ffffff; text-shadow: 1px 1px #000000; }
+.shadowbox { -moz-box-shadow: 4px 5px 7px #000000; -webkit-box-shadow: 4px 5px 7px #000000; box-shadow: 4px 5px 7px #000000;padding:3px;margin:3px; }
+
+body
+{
+	padding: 0 0;
+	background-color:#2e3436;
+	-webkit-background-size: cover; -moz-background-size: cover; -o-background-size: cover;
+	background-size: cover;
+}
+
+</style>
+
+<div sclass="shadowbox" style="background:#311e1e;" >
+
+	<hbox>
+		<label sclass="subhead1" value="${MYTITLE}" />
+		<label style="color:#ffffff" value="${MYVERSION}" />
+		<hbox sclass="shadowbox" style="background:#e12e05">
+			<label id="wfman_m" sclass="subhead0" value="Workforce |" onClick="runMod(self)" />
+			<label id="laborchrg_m" sclass="subhead0" value="Labor charges |" onClick="runMod(self)" />
+			<label id="sendout_m" sclass="subhead0" value="Send-out tracker |" onClick="runMod(self)" />
+			<label id="clientman_m" sclass="subhead0" value="Clients |" onClick="runMod(self)" />
+			<label id="agentsman_m" sclass="subhead0" value="Agents" onClick="runMod(self)" />
+			<label id="formaker_m" sclass="subhead0" value="| FormMaker" onClick="runMod(self)" visible="false" />
+			<label id="lookup_m" sclass="subhead0" value="| Lookup" onClick="runMod(self)" visible="false" />
+			
+		</hbox>
+	</hbox>
+
+</div>
+
+<div id="winsholder" />
+
+<!--
+<button label="testme" onClick="dotestme()" />
+-->
+
+<zscript>
+<![CDATA[
+
+if(setstuff != null)
+{
+	formaker_m.setVisible(true);
+	lookup_m.setVisible(true);
+}
+
+]]>
+</zscript>
+
+</zk>
+
+
+
+
+
+
+
+

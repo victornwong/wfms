@@ -1,0 +1,239 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?page id="agentman_mod"?>
+<zk>
+<zscript src="../wf_global/wfglobaldefs.zs" />
+<zscript src="../wf_global/wfsqlfuncs.zs" />
+<zscript src="../wf_global/formMaker_v1.zs" />
+<zscript>
+<![CDATA[
+MYTITLE = "Agents Management";
+MYVERSION = "v0.1";
+MY_ID = "agentmanid";
+/*
+Written by	: Victor Wong
+Dated		:
+NOTES:
+*/
+/*
+import org.victor.*;
+sechand = new SecurityFuncs();
+myincludeid = Executions.getCurrent().getParameter("myid");
+useraccessobj = sechand.getUserAccessObject();
+if(useraccessobj == null) Executions.sendRedirect(MAINLOGIN_PAGE);
+*/
+kiboo = new Generals();
+sqlhand = new SqlFuncs();
+lbhand = new ListboxHandler();
+guihand = new GuiFuncs();
+luhand = new LookupFuncs();
+
+M_PIN = "1010";
+glob_sel_agent = "";
+
+void showAgentMeta(String iwhat)
+{
+String[] agents_fl = { "Code", "E_mail", "NATIONALITY", "NATIONALITY_ch", "Registered_Name", "Registered_Address", "Registered_Tel_No",
+"Registered_Fax_No", "CLA_License_No", "CLA_License_Expiry_Date", "Oversea_License_No", "Oversea_License_Expiry_Date", "Representative",
+"Contact_Tel_1", "Contact_Fax_1", "Contact_Person_1", "Mobile_1", "Contact_Tel_2", "Contact_Fax_2", "Contact_Person_2", "Mobile_2",
+"Contact_Tel_3", "Contact_Fax_3", "Contact_Person_3", "Mobile_3", "Contact_Tel_4_TPE", "Contact_Fax_4_TPE", "Contact_Person_4_TPE",
+"Mobile_4_TPE", "Contact_Tel_5_TPE", "Contact_Fax_5_TPE", "Contact_Person_5_TPE", "Mobile_5_TPE", "Mailing_Name", "Mailing_Address",
+"Postal_Code", "City" };
+
+Object[] agents_ob = { Code, E_mail, NATIONALITY, NATIONALITY_ch, Registered_Name, Registered_Address, Registered_Tel_No, Registered_Fax_No,
+CLA_License_No, CLA_License_Expiry_Date, Oversea_License_No, Oversea_License_Expiry_Date, Representative, Contact_Tel_1, Contact_Fax_1,
+Contact_Person_1, Mobile_1, Contact_Tel_2, Contact_Fax_2, Contact_Person_2, Mobile_2, Contact_Tel_3, Contact_Fax_3, Contact_Person_3,
+Mobile_3, Contact_Tel_4_TPE, Contact_Fax_4_TPE, Contact_Person_4_TPE, Mobile_4_TPE, Contact_Tel_5_TPE, Contact_Fax_5_TPE, Contact_Person_5_TPE,
+Mobile_5_TPE, Mailing_Name, Mailing_Address, Postal_Code, City };
+
+	r = getAgentRec(iwhat);
+	if(r == null) return;
+	populateUI_Data(agents_ob,agents_fl,r);
+	workarea.setVisible(true);
+	blindTings_withTitle(blindme,seArea,blindtit);
+}
+
+
+class clntlciker implements org.zkoss.zk.ui.event.EventListener
+{
+	public void onEvent(Event event) throws UiException
+	{
+		selitm = event.getReference();
+		glob_sel_agent = lbhand.getListcellItemLabel(selitm,0);
+		showAgentMeta(glob_sel_agent);
+	}
+}
+agentlciker = new clntlciker();
+
+void showAgents()
+{
+Object[] agnthds = 
+{
+	new listboxHeaderWidthObj("origid",false,""),
+	new listboxHeaderWidthObj("Code",true,""),
+	new listboxHeaderWidthObj("Agent",true,""),
+	new listboxHeaderWidthObj("Nat",true,""),
+	new listboxHeaderWidthObj("Rep",true,""),
+	new listboxHeaderWidthObj("Tel",true,""),
+};
+	st = kiboo.replaceSingleQuotes(searchtb.getValue().trim());
+	whstr = "";
+	if(!st.equals("")) whstr = "where (NATIONALITY like '%" + st + "%' or Code like '%" + st + "%' " +
+	"or Registered_Name like '%" + st + "%' or Representative like '%" + st + "') and (deleted=0 or deleted is null)";
+	else
+	whstr = "where deleted=0 or deleted is null";
+
+	Listbox newlb = lbhand.makeVWListbox_Width(agentsholder, agnthds, "agents_lb", 22);
+	sqlstm = "select origid,NATIONALITY,Code,Registered_Name,Registered_Tel_No,Representative from foreignagent " + whstr + " order by Code";
+	trs = gpWFM_GetRows(sqlstm);
+	if(trs.size() == 0) return;
+	newlb.setMold("paging");
+	newlb.addEventListener("onSelect", agentlciker);
+	ArrayList kabom = new ArrayList();
+	String[] fl = { "origid","NATIONALITY","Code","Registered_Name","Registered_Tel_No","Representative" };
+	for(d : trs)
+	{
+		popuListitems_Data(kabom, fl, d);
+		lbhand.insertListItems(newlb,kiboo.convertArrayListToStringArray(kabom),"false","");
+		kabom.clear();
+	}
+}
+
+void doFunc(Object iwhat)
+{
+	itype = iwhat.getId();
+	refresh = false;
+	sqlstm = msgtext = "";
+
+	if(itype.equals("newagent_b"))
+	{
+		sqlstm = "insert into foreignagent (Code, Registered_Name) values ('','NEW AGENT')";
+		refresh = true;
+	}
+
+	if(itype.equals("updagent_b"))
+	{
+		if(glob_sel_agent.equals("")) return;
+
+Object[] agents_ob = { Code, E_mail, NATIONALITY, NATIONALITY_ch, Registered_Name, Registered_Address, Registered_Tel_No, Registered_Fax_No,
+CLA_License_No, CLA_License_Expiry_Date, Oversea_License_No, Oversea_License_Expiry_Date, Representative, Contact_Tel_1, Contact_Fax_1,
+Contact_Person_1, Mobile_1, Contact_Tel_2, Contact_Fax_2, Contact_Person_2, Mobile_2, Contact_Tel_3, Contact_Fax_3, Contact_Person_3,
+Mobile_3, Contact_Tel_4_TPE, Contact_Fax_4_TPE, Contact_Person_4_TPE, Mobile_4_TPE, Contact_Tel_5_TPE, Contact_Fax_5_TPE, Contact_Person_5_TPE,
+Mobile_5_TPE, Mailing_Name, Mailing_Address, Postal_Code, City };
+
+		dth = getString_fromUI(agents_ob);
+		
+sqlstm = "update foreignagent set Code='" + dth[0] + "', E_mail='" + dth[1] + "', NATIONALITY='" + dth[2] + "'," +
+"NATIONALITY_ch='" + dth[3] + "', Registered_Name='" + dth[4] + "', Registered_Address='" + dth[5] + "', Registered_Tel_No='" + dth[6] + "'," +
+"Registered_Fax_No='" + dth[7] + "', CLA_License_No='" + dth[8] + "', CLA_License_Expiry_Date='" + dth[9] + "', Oversea_License_No='" + dth[10] + "'," +
+"Oversea_License_Expiry_Date='" + dth[11] + "', Representative='" + dth[12] + "', Contact_Tel_1='" + dth[13] + "', Contact_Fax_1='" + dth[14] + "'," +
+"Contact_Person_1='" + dth[15] + "', Mobile_1='" + dth[16] + "', Contact_Tel_2='" + dth[17] + "', Contact_Fax_2='" + dth[18] + "'," +
+"Contact_Person_2='" + dth[19] + "', Mobile_2='" + dth[20] + "', Contact_Tel_3='" + dth[21] + "', Contact_Fax_3='" + dth[22] + "'," +
+"Contact_Person_3='" + dth[23] + "', Mobile_3='" + dth[24] + "', Contact_Tel_4_TPE='" + dth[25] + "', Contact_Fax_4_TPE='" + dth[26] + "'," +
+"Contact_Person_4_TPE='" + dth[27] + "', Mobile_4_TPE='" + dth[28] + "', Contact_Tel_5_TPE='" + dth[29] + "', Contact_Fax_5_TPE='" + dth[30] + "'," +
+"Contact_Person_5_TPE='" + dth[31] + "', Mobile_5_TPE='" + dth[32] + "', Mailing_Name='" + dth[33] + "', Mailing_Address='" + dth[34] + "'," +
+"Postal_Code='" + dth[35] + "', City='" + dth[36] + "' where origid=" + glob_sel_agent;
+
+	refresh = true;
+	}
+
+	if(itype.equals("delagent_b"))
+	{
+		delcheck_pop.close();
+		if(glob_sel_agent.equals("")) return;
+		ckp = pintb.getValue().trim();
+		if(ckp.equals(M_PIN))
+		{
+			sqlstm = "update foreignagent set deleted=1 where origid=" + glob_sel_agent;
+			refresh = true;
+			msgtext = "Record deleted..";
+			glob_sel_agent = ""; // reset
+			workarea.setVisible(false);
+			blindTings_withTitle(blindme,seArea,blindtit);
+		}
+	}
+
+	if(!sqlstm.equals("")) gpWFM_execute(sqlstm);
+	if(refresh) showAgents();
+	if(!msgtext.equals("")) guihand.showMessageBox(msgtext);
+}
+
+]]>
+</zscript>
+
+<style>
+.subhead0 { font-size:12px; font-weight:bold; color:#ffffff; text-shadow: 1px 1px #000000; }
+.subhead1 { font-size:16px; font-weight:bold; color:#ffffff; text-shadow: 1px 1px #000000; }
+.subhead2 { font-size:20px; font-weight:bold; color:#ffffff; text-shadow: 1px 1px #000000; }
+.shadowbox { -moz-box-shadow: 4px 5px 7px #000000; -webkit-box-shadow: 4px 5px 7px #000000; box-shadow: 4px 5px 7px #000000;padding:3px;margin:3px; }
+</style>
+
+<window id="${MY_ID}" width="1000px" title="${MYTITLE} ${MYVERSION}" mode="overlapped" border="normal" closable="true">
+
+<popup id="delcheck_pop">
+	<label value="PIN" />
+	<textbox id="pintb" type="password" />
+	<button id="delagent_b" label="Go" onClick="doFunc(self)" />
+</popup>
+
+<div style="background:#083e58">
+
+<hbox>
+	<hbox>
+		<button id="blindme" label="-" style="font-size:9px" onClick="blindTings_withTitle(self,seArea,blindtit)" />
+		<label id="blindtit" sclass="subhead1" value="Lister" visible="false" />
+	</hbox>
+
+	<div id="seArea" style="padding:2px">
+		<hbox>
+			<label style="color:#ffffff" value="Search" />
+			<textbox id="searchtb" />
+			<button label="Go" onClick="showAgents()" />
+			<separator width="30px" />
+			<button id="newagent_b" label="New agent" style="font-weight:bold" onClick="doFunc(self)" />
+			<button label="Delete" style="font-weight:bold;color:#ff2222" onClick='pintb.setValue(""); delcheck_pop.open(self)' />
+		</hbox>
+		<separator height="2px" />
+		<div id="agentsholder" />
+	</div>
+</hbox>
+
+<separator height="2px" />
+<div id="workarea" visible="false">
+<tabbox> <!-- form area -->
+	<tabs>
+		<tab id="tab0" label="Agent" />
+		<tab id="tab1" label="Contacts" />
+	</tabs>
+	<tabpanels>
+	<tabpanel> <!-- Agent info -->
+		<div id="agentinfo_div" />
+	</tabpanel>
+	
+	<tabpanel>
+		<div id="agtcont_div" />
+	</tabpanel>
+	</tabpanels>
+</tabbox>
+
+<hbox>
+	<button id="updagent_b" label="Update" style="font-weight:bold" onClick="doFunc(self)" />
+</hbox>
+
+
+</div> <!-- ENDOF workarea -->
+
+</div>
+
+<zscript>
+<![CDATA[
+
+agentform = dynamicForm(agentinfo_div, "agentmeta_grid", "1");
+agtcontactform = dynamicForm(agtcont_div, "agentcontacts_grid", "2");
+showAgents();
+
+]]>
+</zscript>
+
+</window>
+</zk>
+

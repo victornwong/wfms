@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?page id="chklcassmod"?>
+<zk>
+<zscript src="../rwglobal/rwglobaldefs.zs" />
+<zscript src="../rwglobal/systemAudit.zs" />
+<zscript src="../rwglobal/rwsqlfuncs.zs" />
+<zscript>
+<![CDATA[
+MYTITLE = "Check LC / Assets";
+MYVERSION = "v0.1";
+MY_ID = "chkjasspan";
+/*
+Written by	: Victor Wong
+Dated		: 04/03/2014
+NOTES: refer to new LC/ass tables
+*/
+
+import org.victor.*;
+sechand = new SecurityFuncs();
+myincludeid = Executions.getCurrent().getParameter("myid");
+useraccessobj = sechand.getUserAccessObject();
+if(useraccessobj == null) Executions.sendRedirect(MAINLOGIN_PAGE);
+kiboo = new Generals();
+sqlhand = new SqlFuncs();
+lbhand = new ListboxHandler();
+guihand = new GuiFuncs();
+luhand = new LookupFuncs();
+
+glob_sel_lcid = "";
+
+String JN_linkcode()
+{
+	if(glob_sel_lcid.equals("")) return "";
+	return LC_PREFIX + glob_sel_lcid;
+}
+
+Object[] lasshds =
+{
+	new listboxHeaderWidthObj("origid",false,""),
+	new listboxHeaderWidthObj("AssetTag",true,""),
+	new listboxHeaderWidthObj("S/Num",true,""),
+	new listboxHeaderWidthObj("Item Description",true,""),
+	new listboxHeaderWidthObj("Type",true,""),
+};
+
+void listLCassets(String iwhat)
+{
+	Listbox newlb = lbhand.makeVWListbox_Width(lcass_holder, lasshds, "lcassets_lb", 5);
+	sqlstm = "select origid,asset_tag, serial_no, brand, model,type from rw_lc_equips " + 
+	"where lc_parent=" + iwhat + " order by asset_tag";
+	r = sqlhand.gpSqlGetRows(sqlstm);
+	if(r.size() == 0) return;
+	//newlb.addEventListener("onSelect", lcsclicker);
+	newlb.setMold("paging");
+	newlb.setRows(22);
+	ArrayList kabom = new ArrayList();
+	for(d : r)
+	{
+		kabom.add( d.get("origid").toString() );
+		kabom.add( kiboo.checkNullString(d.get("asset_tag")) );
+		kabom.add( kiboo.checkNullString(d.get("serial_no")) );
+		kabom.add( kiboo.checkNullString(d.get("brand")) + " " + kiboo.checkNullString(d.get("model")) );
+		kabom.add( kiboo.checkNullString(d.get("type")) );
+		lbhand.insertListItems(newlb,kiboo.convertArrayListToStringArray(kabom),"false","");
+		kabom.clear();
+	}
+}
+
+Object[] lchds =
+{
+	new listboxHeaderWidthObj("origid",false,""),
+	new listboxHeaderWidthObj("LC",true,""),
+	new listboxHeaderWidthObj("ROC",true,""),
+	new listboxHeaderWidthObj("Customer",true,""),
+	new listboxHeaderWidthObj("S.Date",true,""),
+	new listboxHeaderWidthObj("E.Date",true,""),
+	new listboxHeaderWidthObj("Status",true,""),
+	new listboxHeaderWidthObj("Remarks",true,""),
+	new listboxHeaderWidthObj("Product",true,""),
+	new listboxHeaderWidthObj("Order.Type",true,""),
+};
+
+class lccliker implements org.zkoss.zk.ui.event.EventListener
+{
+	public void onEvent(Event event) throws UiException
+	{
+		selitem = event.getReference();
+		glob_sel_lcid = lbhand.getListcellItemLabel(selitem,0);
+		listLCassets(glob_sel_lcid);
+	}
+}
+lcsclicker = new lccliker();
+
+void searchLCass()
+{
+	st = kiboo.replaceSingleQuotes( search_tb.getValue().trim() );
+	if(st.equals("")) return;
+	Listbox newlb = lbhand.makeVWListbox_Width(things_holder, lchds, "lcs_lb", 5);
+
+	sqlstm = "select lc.origid,lc.lc_id, lc.rocno, lc.customer_name, lc.lstartdate, lc.lenddate, lc.lstatus, lc.remarks, " +
+	"lc.product_name, lc.order_type from rw_lc_records lc " +
+	"left join rw_lc_equips le on le.lc_parent = lc.origid " +
+	"where lc.customer_name like '%" + st + "%' or lc.lc_id like '%" + st + "%' or lc.remarks like '%" + st + "%' or " +
+	"lc.product_name like '%" + st + "%' or lc.order_type like '%" + st + "%' or " +
+	"le.asset_tag like '%" + st + "%' or le.serial_no like '%" + st + "%' or le.brand like '%" + st + "%' or le.model like '%" + st + "%' " +
+	"group by lc.origid,lc.lc_id, lc.rocno, lc.customer_name,lc.lstartdate, lc.lenddate, lc.lstatus, lc.remarks," +
+	"lc.product_name, lc.order_type " +
+	"order by lc.lc_id, lc.customer_name";
+
+	r = sqlhand.gpSqlGetRows(sqlstm);
+	if(r.size() == 0) return;
+	newlb.addEventListener("onSelect", lcsclicker);
+	newlb.setMold("paging");
+	newlb.setRows(22);
+	ArrayList kabom = new ArrayList();
+	String[] fl = { "origid", "lc_id", "rocno", "customer_name", "lstartdate", "lenddate", "lstatus",
+	"remarks", "product_name", "order_type" };
+	for(d : r)
+	{
+		popuListitems_Data(kabom,fl,d);
+		lbhand.insertListItems(newlb,kiboo.convertArrayListToStringArray(kabom),"false","");
+		kabom.clear();
+	}
+}
+
+// knockoff from contractbillingtrack_v1.zul
+void showLClogs(Object iwhat)
+{
+	showSystemAudit(auditlogs_holder,JN_linkcode(),"");
+	auditlogs_pop.open(iwhat);
+}
+
+]]>
+</zscript>
+
+<popup id="auditlogs_pop">
+<div style="background:#ef2929; -moz-box-shadow: 4px 5px 7px #000000; -webkit-box-shadow: 4px 5px 7px #000000;
+box-shadow: 4px 5px 7px #000000;padding:3px;margin:3px" width="500px" >
+<label sclass="subhead" style=";color:#ffffff">Audit Logs</label>
+<separator height="3px" />
+<div id="auditlogs_holder" />
+<separator height="3px" />
+<button label="Ok" style="font-size:9px" onClick="auditlogs_pop.close()" />
+</div>
+</popup>
+
+<window id="${MY_ID}" width="800px" title="${MYTITLE} ${MYVERSION}" position="top,center" mode="overlapped"
+border="normal" closable="true" sizable="true" >
+<div>
+
+<hbox>
+	<label value="LC/Asset/Serial/etc" style="font-size:9px" />
+	<textbox id="search_tb" width="99%" />
+	<button label="Dig" style="font-size:9px" onClick="searchLCass()" />
+</hbox>
+<separator height="2px" />
+<div id="things_holder" />
+<separator height="2px" />
+<hbox>
+	<button label="View LC logs" style="font-size:9px" onClick="showLClogs(self)" />
+</hbox>
+<separator height="2px" />
+<div id="lcass_holder" />
+
+</div>
+</window>
+</zk>
+

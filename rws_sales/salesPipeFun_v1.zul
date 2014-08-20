@@ -1,0 +1,720 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?page id="pipefuinmod"?>
+<zk>
+<zscript src="../rwglobal/rwglobaldefs.zs" />
+<zscript src="../rwglobal/rwsqlfuncs.zs" />
+<zscript src="../rwglobal/formMaker_v1.zs" />
+<zscript src="../rwglobal/uploadDocu_v1.zs" />
+<zscript src="../rwglobal/emailfuncs.zs" />
+<zscript src="../rwglobal/fc6_CustomerSelector.zs" />
+<zscript src="../rwglobal/uploadedWorksheet_v1.zs" />
+<zscript src="../rwglobal/systemAudit.zs" />
+<zscript src="../rwglobal/jobNotes_funcs.zs" />
+<zscript src="../rwglobal/internaltasksf_v1.zs" />
+<zscript src="./rwQuotation_funcs.zs" />
+<zscript>
+<![CDATA[
+MYTITLE = "Sales Pipeline Fun";
+MYVERSION = "v0.2";
+MYPANEL = "saelspipefpan";
+/*
+Title		: Sales Pipeline Fun
+Written by	: Victor Wong
+Dated		: 02/12/2013
+
+*/
+import java.util.*;
+import java.text.*;
+import org.victor.*;
+sechand = new SecurityFuncs();
+
+myincludeid = Executions.getCurrent().getParameter("myid");
+useraccessobj = sechand.getUserAccessObject();
+if(useraccessobj == null) Executions.sendRedirect(MAINLOGIN_PAGE);
+
+kiboo = new Generals();
+sqlhand = new SqlFuncs();
+lbhand = new ListboxHandler();
+guihand = new GuiFuncs();
+luhand = new LookupFuncs();
+
+Object last_sel_qtrow = null; // last selected pipe-row
+glob_qt_rec = null; // use in other mods
+glob_sel_quote = "";
+glob_pipe_user = useraccessobj.username; // init def
+
+// Customize this for other mods to produce the linking-code for rw_jobnotes
+// used at DIV and jobNotes_funcs.zs
+String JN_linkcode()
+{
+	if(glob_sel_quote.equals("")) return "";
+	return QUOTE_PREFIX + glob_sel_quote;
+}
+
+// Check if QT already exist in pipes
+boolean qtExistsInPipes(String iqt)
+{
+	retv = false;
+	for(p=0; p<glob_MyPipes.length; p++)
+	{
+		kp = glob_MyPipes[p].getChildren().toArray();
+		if(kp.length > 0)
+		{
+			for(i=0; i<kp.length; i++)
+			{
+				kr = kp[i].getChildren().toArray();
+				qtn = kr[0].getValue();
+				if(iqt.equals(qtn))
+				{
+					retv = true;
+					break;
+				}
+			}
+		}
+	}
+	return retv;
+}
+
+// Get all existing QTs in the pipes
+String existQTs()
+{
+	retv = "";
+	for(p=0; p<glob_MyPipes.length; p++)
+	{
+		kp = glob_MyPipes[p].getChildren().toArray();
+		if(kp.length > 0)
+		{
+			for(i=0; i<kp.length; i++)
+			{
+				kr = kp[i].getChildren().toArray();
+				qtn = kr[0].getValue();
+				retv += qtn + ",";
+			}
+		}
+	}
+
+	try { retv = retv.substring(0,retv.length()-1); } catch (Exception e) {}
+	return retv;
+}
+
+// Construct sql-insert from grid.rows - to save quotation-no .. can be modded for others
+String insertPipeThings(int ipipe, org.zkoss.zul.Rows iwhich )
+{
+	sqlstm = "";
+	rw = iwhich.getChildren().toArray();
+	if(rw.length > 0)
+	{
+		for(i=0; i<rw.length; i++)
+		{
+			if(rw[i] instanceof org.zkoss.zul.Row)
+			{
+				ris = rw[i].getChildren().toArray();
+				sqlstm += "insert into rw_qt_pipeline (username,qt_no,pipe_pos) values " +
+				"('" + glob_pipe_user + "'," + ris[0].getValue() + "," + ipipe.toString() + ");";
+			}
+		}
+	}
+	return sqlstm;
+}
+
+void clearPipes()
+{
+	for(p=0; p<glob_MyPipes.length; p++)
+	{
+		kp = glob_MyPipes[p].getChildren().toArray();
+		if(kp.length > 0)
+		{
+			for(i=0; i<kp.length; i++)
+			{
+				kp[i].setParent(null);
+			}
+		}
+	}
+}
+
+void populatePipes()
+{
+	// clear all pipes before loading new ones..
+	clearPipes();
+	userpipe_lbl.setValue(glob_pipe_user + "'s Pipeline");
+	last_sel_qtrow = null; // reset once reload pipes
+	glob_sel_quote = "";
+
+	sqlstm = "select qtpip.qt_no,qt.customer_name,qtpip.pipe_pos,qt.username," +
+	"(select count(itk.origid) from rw_int_tasks itk where " + 
+	"itk.linking_code = 'RWQT' + cast(qtpip.qt_no as varchar(10)) ) as taskcount " +
+	"from rw_quotations qt " +
+	"left join rw_qt_pipeline qtpip on qtpip.qt_no = qt.origid " +
+	"where qt.customer_name is not null and qtpip.username='" + glob_pipe_user + "';";
+	//debugbox.setValue(sqlstm);
+	recs = sqlhand.gpSqlGetRows(sqlstm);
+	if(recs.size() == 0) return;
+	for( d : recs)
+	{
+		ppos = d.get("pipe_pos") - 1;
+		krws = glob_MyPipes[ ppos ];
+		if(krws != null)
+		{
+			nrw = new org.zkoss.zul.Row();
+			nrw.setParent(krws);
+			nrw.setDraggable("pipefun");
+			//nrw.addEventListener("onDoubleClick", pipeQT_doubleClick);
+			nrw.setContext(qtContextMenu);
+
+			styl = "font-size:9px";
+			if(ppos == 4) // HARDCODED: LOST bin
+				styl += ";text-decoration:line-through";
+
+			gpMakeLabel(nrw,"",d.get("qt_no").toString(),"font-size:9px");
+			gpMakeLabel(nrw,"",d.get("customer_name") + " [" + d.get("username") + "] / " + d.get("taskcount").toString() , styl);
+		}
+	}
+	
+	qtContextMenu.addEventListener("onOpen",QTcontextonOpen);
+}
+
+// Save moved-around things in pipefun
+void savePipeFun()
+{
+	// remove all belongs to user before saving new pipes
+	sqlstm = "delete from rw_qt_pipeline where username='" + glob_pipe_user + "'";
+	sqlhand.gpSqlExecuter(sqlstm);
+	sqlstm = insertPipeThings(1,d_rows1);
+	sqlstm += insertPipeThings(2,d_rows2);
+	sqlstm += insertPipeThings(3,d_rows3);
+	sqlstm += insertPipeThings(4,d_rows4);
+	sqlstm += insertPipeThings(5,d_lostbin);
+	sqlhand.gpSqlExecuter(sqlstm);
+}
+
+// When user close panel -- auto save the pipes
+void closePanelSave()
+{
+	savePipeFun();
+}
+
+// Simple hack to move grid.row around
+void pipeDrop(DropEvent event, Object droped)
+{
+	Object dragged = event.getDragged();
+	Object findrws = findgrd = null;
+
+	if(droped instanceof Div)
+	{
+		cd1 = droped.getChildren().toArray();
+		for(i=0; i<cd1.length; i++)
+		{
+			if(cd1[i] instanceof Grid)
+			{
+				findgrd = cd1[i];
+				break;
+			}
+		}
+		if(findgrd != null)
+		{
+			cd2 = findgrd.getChildren().toArray();
+			for(i=0; i<cd2.length; i++)
+			{
+				if(cd2[i] instanceof Rows)
+				{
+					findrws = cd2[i];
+					break;
+				}
+			}
+		}
+	}
+	//alert(dragged + " :: " + droped + " :: " + findgrd + " :: " + findrws);
+	if(findrws != null)
+	{
+		kx = dragged.getChildren().toArray();
+		if(findrws.getId().equals("d_lostbin")) // strike-out quotation if dragged to lost-bin
+			kx[1].setStyle( kx[1].getStyle() + ";text-decoration:line-through");
+		else
+			kx[1].setStyle( "font-size:9px" );
+
+		dragged.setParent(findrws); // actually moving
+	}
+}
+
+class pipeqtdclk implements org.zkoss.zk.ui.event.EventListener
+{
+	public void onEvent(Event event) throws UiException
+	{
+		isel = event.getTarget();
+		showQTworkout(isel);
+	}
+}
+
+pipeQT_doubleClick = new pipeqtdclk();
+
+// Populate quotations - can be used for others, set iholder and lbid accordingly
+void populateQuotationsBox(Div iholder, String lbid, String iexistqt)
+{
+Object[] qtlbhds =
+{
+	new listboxHeaderWidthObj("QT#",true,"60px"),
+	new listboxHeaderWidthObj("Dated",true,"70px"),
+	new listboxHeaderWidthObj("Customer",true,""),
+	new listboxHeaderWidthObj("User",true,"70px"),
+};
+	Listbox newlb = lbhand.makeVWListbox_Width(iholder, qtlbhds, lbid, 22);
+	sqlstm = "select origid,datecreated,username,customer_name from rw_quotations ";
+	if(!iexistqt.equals("")) sqlstm += "where origid not in (" + iexistqt + ")";
+
+	recs = sqlhand.gpSqlGetRows(sqlstm);
+	if(recs.size() == 0) return;
+	newlb.setMold("paging");
+	newlb.setCheckmark(true);
+	newlb.setMultiple(true);
+	//newlb.addEventListener("onSelect", new lclbClick());
+	ArrayList kabom = new ArrayList();
+	for(d : recs)
+	{
+		kabom.add(d.get("origid").toString());
+		kabom.add( kiboo.checkNullDate(d.get("datecreated"),"") );
+		kabom.add( kiboo.checkNullString(d.get("customer_name")) );
+		kabom.add( kiboo.checkNullString(d.get("username")) );
+		lbhand.insertListItems(newlb,kiboo.convertArrayListToStringArray(kabom),"false","");
+		kabom.clear();
+	}
+}
+
+void doFunc(Object iwhat)
+{
+	itype = iwhat.getId();
+	msgtext = "";
+	
+	if(itype.equals("addqt_b"))
+	{
+		populateQuotationsBox(addqts_holder,"pop_addqtlb",existQTs());
+		addqt_pop.open(iwhat);
+	}
+
+	if(itype.equals("realaddqt_b"))
+	{
+		if(!lbhand.check_ListboxExist_SelectItem(addqts_holder,"pop_addqtlb")) return;
+		qls = pop_addqtlb.getSelectedItems().toArray();
+		for(i=0; i<qls.length; i++)
+		{
+			qtn = lbhand.getListcellItemLabel(qls[i],0);
+			qcst = lbhand.getListcellItemLabel(qls[i],2);
+
+			if(!qtExistsInPipes(qtn)) // chk if QT already exist in pipes
+			{
+				nrw = new org.zkoss.zul.Row();
+				nrw.setParent(d_rows1); // d_rows1 def in UI
+				nrw.setDraggable("pipefun");
+				//nrw.addEventListener("onDoubleClick", pipeQT_doubleClick);
+				nrw.setContext(qtContextMenu);
+
+				gpMakeLabel(nrw,"",qtn,"font-size:9px");
+				gpMakeLabel(nrw,"",qcst,"font-size:9px");
+				//qtd = lbhand.getListcellItemLabel(qls[i],1);
+				//qun = lbhand.getListcellItemLabel(qls[i],3);
+				//gpMakeLabel(nrw,"",qtd,"font-size:9px");
+				//gpMakeLabel(nrw,"",qun,"font-size:9px");
+			}
+		}
+		addqt_pop.close();
+	}
+
+	if(itype.equals("savepipe_b"))
+	{
+		savePipeFun();
+		msgtext = "Pipeline saved..";
+	}
+
+	if(itype.equals("remqtpipe_b"))
+	{
+		if (Messagebox.show("Really remove quotation " + glob_sel_quote + " from pipeline tracking??", "Are you sure?", 
+			Messagebox.YES | Messagebox.NO, Messagebox.QUESTION) !=  Messagebox.YES) return;
+
+		last_sel_qtrow.setParent(null);
+		last_sel_qtrow = null;
+		savePipeFun();
+	}
+	
+	if(itype.equals("loadpipes_b"))
+	{
+		glob_pipe_user = userpipe.getSelectedItem().getLabel();
+		populatePipes();
+	}
+	
+	// showQTworkout(isel);
+
+	if(!msgtext.equals("")) guihand.showMessageBox(msgtext);
+}
+
+// populate and show QT workout popup 
+void showQTworkout(Object isqt)
+{
+	if(last_sel_qtrow != null) last_sel_qtrow.setStyle("");
+	isqt.setStyle("background:#ad7fa8");
+	last_sel_qtrow = isqt;
+
+	ki = isqt.getChildren().toArray();
+	glob_sel_quote = ki[0].getValue();
+	showQuoteMeta(glob_sel_quote,1);
+	showJobNotes(JN_linkcode(),jobnotes_holder,"jobnotes_lb"); // customize accordingly here..
+	qtwork_pop.open(isqt);
+}
+
+PIPE_PANEL_WIDTH = "280px";
+
+Object contextSelectedRow = null;
+class ctxopen implements org.zkoss.zk.ui.event.EventListener
+{
+	public void onEvent(Event event) throws UiException
+	{
+		isel = event.getReference();
+		contextSelectedRow = isel; // save Row which fires the context-menu
+	}
+}
+QTcontextonOpen = new ctxopen();
+
+void qtContextDo(Object iwhat)
+{
+	itype = iwhat.getId();
+
+	if(itype.equals("viewqt_m")) showQTworkout(contextSelectedRow);
+
+	if(itype.equals("itask_m")) // internal tasks management
+	{
+		ki = contextSelectedRow.getChildren().toArray();
+		glob_sel_quote = ki[0].getValue();
+		inttask_lbl.setValue("Internal tasks for quotation : " + glob_sel_quote);
+		showInternalTasksList(1,useraccessobj.username, JN_linkcode(), "", tasksfromyou_holder, "asstasks_lb");
+		internaltasks_man_pop.open(contextSelectedRow);
+	}
+	
+	if(itype.equals("otherthing_m")) guihand.showMessageBox("Don't know what else to put.. later will think");
+}
+
+void internaltask_callback() // call-back fired from internaltasksf_v1.zs
+{
+	populatePipes();
+}
+
+]]>
+</zscript>
+
+<menupopup id="qtContextMenu">
+	<menuitem id="viewqt_m" label="Quotation Metadata" onClick="qtContextDo(self)" />
+	<menuitem id="itask_m" label="Tasks assignment" onClick="qtContextDo(self)" />
+	<menuitem id="otherthing_m" label="Others" onClick="qtContextDo(self)" />
+</menupopup>
+
+<popup id="internaltasks_man_pop">
+<div style="background:#9db91d; -moz-box-shadow: 4px 5px 7px #000000; -webkit-box-shadow: 4px 5px 7px #000000;
+box-shadow: 4px 5px 7px #000000;padding:3px;margin:2px" width="880px" >
+<label id="inttask_lbl" sclass="subhead1" style="color:#ffffff" />
+<separator height="6px" bar="true" />
+<label id="inttaskno_lbl" visible="false" />
+<div>
+	<!-- <label sclass="subhead1" style="color:#ffffff" value="Tasks you assigned-to" /> -->
+	<separator height="3px" />
+	<div id="tasksfromyou_holder" />
+	<separator height="2px" />
+	<button id="settaskdone_b" label="Task toggler" onClick="internalTasksDo(self)" />
+	<separator height="3px" />
+	<grid width="600px">
+		<rows>
+			<row>
+				<label value="Assign to" />
+				<listbox id="intassignto_lb" mold="select" />
+				<label value="Priority" />
+				<listbox id="inttaskprio_lb" mold="select" />
+			</row>
+			<row spans="4">
+				<label value="Task to do" />
+			</row>
+			<row spans="4">
+				<textbox id="assignto_task" style="font-size:9px" multiline="true" width="99%" height="70px" />
+			</row>
+			<row spans="4">
+				<hbox>
+					<button id="saveinttask_b" label="Assign it" onClick="internalTasksDo(self)" />
+					<button id="delinttask_b" label="Remove" onClick="internalTasksDo(self)" />
+					<button id="clearinttask_b" label="Clear" onClick="internalTasksDo(self)" />
+				</hbox>
+			</row>
+		</rows>
+	</grid>
+</div>
+</div>
+</popup>
+
+<popup id="qtwork_pop">
+<div style="background:#555753; -moz-box-shadow: 4px 5px 7px #000000; -webkit-box-shadow: 4px 5px 7px #000000;
+box-shadow: 4px 5px 7px #000000;padding:3px;margin:2px" width="900px" >
+
+	<hbox>
+	<button id="remqtpipe_b" label="Remove quotation from pipeline" style="color:#ff0000;font-weight:bold" onClick="doFunc(self)" />
+	</hbox>
+	<separator height="4px" />
+
+	<hbox id="workarea_holder" >
+		<vbox>
+			<grid>
+				<rows>
+					<row style="background:#97b83a" >
+						<label value="QT#" />
+						<label id="q_origid" style="font-size:14px;font-weight:bold" />
+						<hbox>
+							<label value="Dated: " />
+							<label id="q_datecreated" />
+						</hbox>
+						<label value="JobID" />
+						<label id="p_job_id" style="font-weight:bold" />
+					</row>
+					<row spans="1,4" >
+						<label value="Customer" style="font-size:9px" />
+						<textbox id="customername" width="99%" style="font-weight:bold" />
+					</row>
+				</rows>
+			</grid>
+			
+			<hbox>
+			<div id="qtform_holder" />
+			
+	<div style="background:#3465a4; -moz-box-shadow: 4px 5px 7px #000000; -webkit-box-shadow: 4px 5px 7px #000000;
+	box-shadow: 4px 5px 7px #000000;padding:2px;margin:2px" width="380px" id="jobnotes_div" >
+		<label sclass="subhead1" style="color:#ffffff">Quotation - JOB NOTES</label>
+		<separator height="3px" />
+		<div id="jobnotes_holder" />
+		<separator height="2px" />
+		<hbox>
+			<button id="deletejobn_b" label="Delete" style="font-size:9px;font-weight:bold"
+				onClick="jobNoteFunc(self,JN_linkcode())" />
+		</hbox>
+		<separator height="2px" />
+		<div id="jobnotes_entry_holder">
+			<grid>
+				<rows>
+					<row visible="false">
+						<label value="To" style="font-size:9px" />
+						<textbox id="jn_towho" width="99%" style="font-weight:bold" />
+					</row>
+					<row>
+						<label value="Subject" style="font-size:9px" />
+						<textbox id="jn_subject" width="99%" style="font-weight:bold" />
+					</row>
+					<row>
+						<label value="Notes" style="font-size:9px" />
+						<textbox id="jn_msgbody" width="99%" multiline="true" height="60px" />
+					</row>
+				</rows>
+			</grid>
+			<separator height="2px" />
+			<button id="postjobn_b" label="Post" style="font-weight:bold" onClick="jobNoteFunc(self,JN_linkcode())" />
+			<button id="clearjobn_b" label="Clear" style="font-weight:bold" onClick="jobNoteFunc(self,JN_linkcode())" />
+			
+		</div>
+	</div>
+			
+			</hbox>
+			
+			<vbox>
+				<div style="background:#628821;padding:2px">
+				<label sclass="subhead1" style="color:#ffffff" >Quote Items</label>
+				</div>
+
+				<div id="qtitems_holder" />
+
+				<hbox>
+					<label sclass="subhead1" style="color:#ffffff" value="Total:" />
+					<separator width="10px" />
+					<label id="grandtotal_lbl" style="color:#ffffff" sclass="subhead2" />
+				</hbox>
+			</vbox> <!-- ENDOF quote-items vbox -->
+		</vbox>
+
+	</hbox>
+
+</div>
+</popup>
+
+<popup id="addqt_pop">
+<div style="background:#ad7fa8; -moz-box-shadow: 4px 5px 7px #000000; -webkit-box-shadow: 4px 5px 7px #000000;
+box-shadow: 4px 5px 7px #000000;padding:3px;margin:3px" width="500px" >
+	<label sclass="subhead1" style="color:#ffffff" value="Add Quotations To Pipeline" />
+	<separator height="3px" />
+	<div id="addqts_holder" />
+	<separator height="3px" />
+	<button id="realaddqt_b" label="Add selected to pipeline" onClick="doFunc(self)" />
+</div>
+</popup>
+
+<style>
+.subhead1 { font-size:16px; font-weight:bold; color:#ffffff; text-shadow: 1px 1px #000000; }
+.subhead2 {	font-size:24px; font-weight:bold; color:#ffffff; text-shadow: 1px 1px #000000; }
+</style>
+
+<div width="1200px">
+<panel id="${MYPANEL}" title="${MYTITLE} ${MYVERSION}" border="normal" collapsible="true" closable="true"
+onClose="closePanelSave()" >
+<panelchildren>
+
+<div style="background:#2e3436; -moz-box-shadow: 4px 5px 7px #000000; -webkit-box-shadow: 4px 5px 7px #000000;
+box-shadow: 4px 5px 7px #000000;padding:3px;margin:3px">
+
+<hbox>
+
+<div id="pipeadmin_box" style="background:#e58512;padding:2px" visible="false" >
+	<hbox>
+		<listbox id="userpipe" mold="select" />
+		<button id="loadpipes_b" label="Load user's pipes" onClick="doFunc(self)" />
+	</hbox>
+</div>
+
+<button id="addqt_b" label="Add quotations" onClick="doFunc(self)" />
+<button id="savepipe_b" label="SAVE pipeline" style="font-weight:bold" onClick="doFunc(self)" />
+
+<button id="adminbutts" label="Admin" style="color:#ff0000;font-weight:bold" visible="false" />
+
+</hbox>
+
+</div>
+
+<separator height="5px" />
+<div style="background:#3465a4; -moz-box-shadow: 4px 5px 7px #000000; -webkit-box-shadow: 4px 5px 7px #000000;
+box-shadow: 4px 5px 7px #000000;padding:3px;margin:3px">
+<label id="userpipe_lbl" sclass="subhead2" />
+</div>
+<separator height="3px" />
+
+<hbox>
+
+<div style="background:#204a87; -moz-box-shadow: 4px 5px 7px #000000; -webkit-box-shadow: 4px 5px 7px #000000;
+box-shadow: 4px 5px 7px #000000;padding:3px;margin:2px; border:1px solid gray;overflow:auto; "
+width="${PIPE_PANEL_WIDTH}" height="600px"
+droppable="pipefun" onDrop="pipeDrop(event,self);" >
+
+<div style="background:#2e3436;padding:2px" >
+<label sclass="subhead1" value="On your mark.." />
+</div>
+
+<separator height="3px" />
+<grid>
+	<rows id="d_rows1">
+	</rows>
+</grid>
+</div> <!-- ENDOF pipe 1 -->
+
+<div style="background:#3465a4; -moz-box-shadow: 4px 5px 7px #000000; -webkit-box-shadow: 4px 5px 7px #000000;
+box-shadow: 4px 5px 7px #000000;padding:3px;margin:2px; border:1px solid gray;overflow:auto;"
+width="${PIPE_PANEL_WIDTH}" height="550px"
+droppable="pipefun" onDrop="pipeDrop(event,self);" >
+
+<div style="background:#2e3436;padding:2px" >
+<label sclass="subhead1" value="Almost there" />
+</div>
+
+<separator height="3px" />
+<grid>
+	<rows id="d_rows2">
+	</rows>
+</grid>
+</div> <!-- ENDOF pipe 2 -->
+
+<div style="background:#729fcf; -moz-box-shadow: 4px 5px 7px #000000; -webkit-box-shadow: 4px 5px 7px #000000;
+box-shadow: 4px 5px 7px #000000;padding:3px;margin:2px; border:1px solid gray;overflow:auto;"
+width="${PIPE_PANEL_WIDTH}" height="450px"
+droppable="pipefun" onDrop="pipeDrop(event,self);" >
+
+<div style="background:#2e3436;padding:2px" >
+<label sclass="subhead1" value="Start to clap" />
+</div>
+
+<separator height="3px" />
+<grid>
+	<rows id="d_rows3">
+	</rows>
+</grid>
+</div> <!-- ENDOF pipe 3 -->
+
+<vbox>
+	<div style="background:#73d216; -moz-box-shadow: 4px 5px 7px #000000; -webkit-box-shadow: 4px 5px 7px #000000;
+	box-shadow: 4px 5px 7px #000000;padding:3px;margin:2px; border:1px solid gray;overflow:auto;"
+	width="${PIPE_PANEL_WIDTH}" height="300px"
+	droppable="pipefun" onDrop="pipeDrop(event,self);" >
+
+	<div style="background:#2e3436;padding:2px" >
+	<label sclass="subhead1" value="WON!!!" />
+	</div>
+
+	<separator height="3px" />
+	<grid>
+		<rows id="d_rows4">
+		</rows>
+	</grid>
+	</div> <!-- ENDOF pipe 4 -->
+
+	<div style="background:#5c0404; -moz-box-shadow: 4px 5px 7px #000000; -webkit-box-shadow: 4px 5px 7px #000000;
+	box-shadow: 4px 5px 7px #000000;padding:3px;margin:2px; border:1px solid gray;overflow:auto;"
+	width="${PIPE_PANEL_WIDTH}" height="300px"
+	droppable="pipefun" onDrop="pipeDrop(event,self);" >
+
+	<div style="background:#2e3436;padding:2px" >
+	<label sclass="subhead1" value="LOST..." />
+	</div>
+
+	<separator height="3px" />
+	<grid>
+		<rows id="d_lostbin" >
+		</rows>
+	</grid>
+	</div> <!-- ENDOF pipe 5 -->
+
+</vbox>
+
+</hbox>
+
+<label id="debugbox" multiline="true" />
+
+<zscript>
+<![CDATA[
+// HARDCODED -- scan through 4 pipes for now
+Object[] glob_MyPipes = { d_rows1, d_rows2, d_rows3, d_rows4, d_lostbin };
+
+qtmetaform = dynamicForm(qtform_holder, "qtmetaform_grid", "17");
+luhand.populateListbox_ByLookup(userpipe,"SALES_PIPELINE_USERS",2);
+
+populateUsernames(intassignto_lb,"");
+luhand.populateListbox_ByLookup(inttaskprio_lb,"PRIORITY_LISTS",2);
+
+populatePipes(); // def start populate user's own pipelines
+
+if(useraccessobj.username.equals("mandy")) // special access to load other user's pipes
+{
+	pipeadmin_box.setVisible(true);
+}
+
+if(useraccessobj.accesslevel == 9)
+{
+	adminbutts.setVisible(true);
+	pipeadmin_box.setVisible(true);
+}
+
+class qtmetapopclose implements org.zkoss.zk.ui.event.EventListener
+{
+	public void onEvent(Event event) throws UiException
+	{
+		kee = event.getTarget();
+		/*
+		if(!kee.isVisible())
+			if(last_sel_qtrow != null) last_sel_qtrow.setStyle("");
+		*/
+	}
+}
+//qtwork_pop.addEventListener("onOpen", new qtmetapopclose());
+
+
+
+]]>
+</zscript>
+</panelchildren>
+</panel>
+</div>
+</zk>
+
